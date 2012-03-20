@@ -12,7 +12,7 @@ sub new {
 }
 
 sub cmd { shift->{cmd} }
-sub args { my ($self) = @_; wantarray ? @{ $self->{args} } : $self->{args} }
+sub args { my ($self) = @_; wantarray ? @{ $self->{args} || [] } : ($self->{args} || []) }
 
 1 && q{this expression is true};
 __END__

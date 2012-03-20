@@ -49,9 +49,11 @@ sub ipc_pipeline {
     cmds => [ map {
       eval { $_->isa("${class}::Command") } ? $_ :
       eval { $_->isa($class) }              ? $_->cmds :
+      ! ref($_)              ? ${ \"${class}::Command" }->new(cmd_str => $_) :
       reftype($_) eq 'ARRAY' ? ${ \"${class}::Command" }->new(cmd => shift(@$_), args => $_) :
       reftype($_) eq 'CODE'  ? ${ \"${class}::Command" }->new(cmd_code => $_) :
-      ${ \"${class}::Command" }->new(cmd_str => $_);
+      die "unhandled type passed to ipc_pipeline!\n";
+      # TODO: handle placeholders as commands
     } @cmds ]);
 }
 
