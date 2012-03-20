@@ -4,24 +4,115 @@ package IPC::Pipeline::Composable;
 use English qw( -no_match_vars);
 use Data::Dumper;
 use autodie;
+use Scalar::Util qw(reftype blessed);
 use Fcntl;
+
+use parent qw(Exporter);
+our @EXPORT_OK = qw( ipc_pipeline ipc_command ipc_placeholder );
+our %EXPORT_TAGS = ( all => \@EXPORT_OK );
+
+
+use IPC::Pipeline::Composable::Command qw();
+use IPC::Pipeline::Composable::Placeholder qw();
 
 # This package is embedded at the bottom of this module.
 #  It is based off IPC::Pipeline, but works in a slightly
 #  different manner. (final FH is not linked to a pipe)
 IPC::Pipeline::Continuous->import('pipeline_c');
 
+=method new
+Standard constructor.
+TODO: describe options
+=cut
 sub new {
   my ($class, %args) = @_;
   my %self = (
     pids      => [],
-    cmds      => [],
+    cmds      => [ @{ $args{cmds} || [] } ],
     (exists $args{source_fh} ? (source_fh => $args{source_fh}) : ()),
     (exists $args{sink_fh}   ? (sink_fh   => $args{sink_fh})   : ()),
     (exists $args{err_fh}    ? (serr_fh   => $args{err_fh})    : ()),
   );
   return bless \%self, $class;
 }
+
+=function ipc_pipeline
+Construct a pipeline from a series of commands, placeholders or other pipelines
+=cut
+sub ipc_pipeline {
+  my ($class, @cmds) =
+    !eval { $_[0]->isa(__PACKAGE__) } ? (__PACKAGE__, @_) :
+    blessed($_[0])                    ? (__PACKAGE__, @_) :
+    @_;
+
+  return $class->new(
+    cmds => [ map {
+      eval { $_->isa("${class}::Command") } ? $_ :
+      eval { $_->isa($class) }              ? $_->cmds :
+      reftype($_) eq 'ARRAY' ? ${ \"${class}::Command" }->new(cmd => shift(@$_), args => $_) :
+      reftype($_) eq 'CODE'  ? ${ \"${class}::Command" }->new(cmd_code => $_) :
+      ${ \"${class}::Command" }->new(cmd_str => $_);
+    } @cmds ]);
+}
+
+=function ipc_command
+Construct a command from a series of arguments or placeholders
+=cut
+sub ipc_command {
+  my ($class, $cmd, @args) =
+    !eval { $_[0]->isa(__PACKAGE__) } ? (__PACKAGE__, @_) :
+    blessed($_[0])                    ? (__PACKAGE__, @_) :
+    @_;
+
+  return ${ \"${class}::Command" }->new(cmd => $cmd, args => \@args);
+}
+
+=function ipc_placeholder
+Construct a placeholder with a name and arguments
+TODO: describe arguments
+SEE ALSO: the new() method in L<IPC::Pipeline::Composable::Placeholder>
+=cut
+sub ipc_placeholder {
+  my ($class, $name, %args) =
+    !eval { $_[0]->isa(__PACKAGE__) } ? (__PACKAGE__, @_) : @_;
+
+  return ${ \"${class}::Placeholder" }->new(name => $name, %args);
+}
+
+=method cmds
+Get the list of commands that make up this pipeline
+=cut
+sub cmds { my ($self) = @_; wantarray ? @{$self->{cmds}} : $self->{cmds} }
+
+
+=method pids
+When the pipeline is running, get the list of process IDS of the commands.
+Please note - they may not all be running. Checking them is your (or another
+module's) job.
+=cut
+sub pids { my ($self) = @_; wantarray ? @{$self->{pids}} : $self->{pids} }
+
+
+=method run
+construct and run the pipeline from the cmd objects we've composed.
+TODO: describe options and other stuff
+=cut
+sub run {
+  my ($self,%args) = @_;
+  my $src  = exists $self->{source_fh} ? $self->{source_fh} : undef; # shift @{$self->{cmds}};
+  my $sink = exists $self->{sink_fh}   ? $self->{sink_fh}   : undef; #pop   @{$self->{cmds}};
+  my $err  = exists $self->{err_fh}    ? $self->{err_fh}    : undef; #\*STDERR;
+  @{$self->{pids}} = pipeline_c(
+    $src, $sink, $err,
+    @{ $self->{cmds} },
+    #map { scalar $_->_spec() } @{$self->{cmds}},
+  );
+  #close $in;
+  return $self;
+}
+
+
+
 
 sub push_cmd {
   my ($self, @args) = @_;
@@ -33,11 +124,6 @@ sub unshift_cmd {
   my ($self, @args) = @_;
   unshift @{$self->{cmds}}, \@args;
   return $self;
-}
-
-sub pids {
-  my ($self) = @_;
-  return wantarray ? @{$self->{pids}} : $self->{pids};
 }
 
 # This is so non-portable... I can't find a CPAN dist for this???
@@ -81,23 +167,6 @@ sub err_fn {
 }
 
 
-
-# construct and run the pipeline from the cmd objects we've composed.
-# the idea is this: an object of this class can double as a file-handle,
-# so it can act as either a source or a sink!
-sub run {
-  my ($self,%args) = @_;
-  my $src  = exists $self->{source_fh} ? $self->{source_fh} : undef; # shift @{$self->{cmds}};
-  my $sink = exists $self->{sink_fh}   ? $self->{sink_fh}   : undef; #pop   @{$self->{cmds}};
-  my $err  = exists $self->{err_fh}    ? $self->{err_fh}    : undef; #\*STDERR;
-  @{$self->{pids}} = pipeline_c(
-    $src, $sink, $err,
-    @{ $self->{cmds} },
-    #map { scalar $_->_spec() } @{$self->{cmds}},
-  );
-  #close $in;
-  return $self;
-}
 
 1 && q{this expression is true};
 
