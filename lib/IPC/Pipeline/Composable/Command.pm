@@ -14,5 +14,12 @@ sub new {
 sub cmd { shift->{cmd} }
 sub args { my ($self) = @_; wantarray ? @{ $self->{args} || [] } : ($self->{args} || []) }
 
+sub spec {
+  my ($self) = @_;
+  $self->{cmd_str}  ? [split ' ', $self->{cmd_str}] :
+  $self->{cmd_code} ? $self->{cmd_code} :
+  [$self->{cmd}, @{ $self->{args} || [] } ];
+}
+
 1 && q{this expression is true};
 __END__

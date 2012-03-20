@@ -18,7 +18,7 @@ use IPC::Pipeline::Composable::Placeholder qw();
 # This package is embedded at the bottom of this module.
 #  It is based off IPC::Pipeline, but works in a slightly
 #  different manner. (final FH is not linked to a pipe)
-IPC::Pipeline::Continuous->import('pipeline_c');
+IPC::Pipeline::Continuous->import(qw(pipeline_c pipeline));
 
 =method new
 Standard constructor.
@@ -100,33 +100,17 @@ construct and run the pipeline from the cmd objects we've composed.
 TODO: describe options and other stuff
 =cut
 sub run {
-  my ($self,%args) = @_;
-  my $src  = exists $self->{source_fh} ? $self->{source_fh} : undef; # shift @{$self->{cmds}};
-  my $sink = exists $self->{sink_fh}   ? $self->{sink_fh}   : undef; #pop   @{$self->{cmds}};
-  my $err  = exists $self->{err_fh}    ? $self->{err_fh}    : undef; #\*STDERR;
-  @{$self->{pids}} = pipeline_c(
-    $src, $sink, $err,
-    @{ $self->{cmds} },
-    #map { scalar $_->_spec() } @{$self->{cmds}},
-  );
-  #close $in;
+  my ($self, %args) = @_;
+  %args = (%$self, %args);
+  my $src  = exists $args{source_fh} ? $args{source_fh} : undef;
+  my $sink = exists $args{sink_fh}   ? $args{sink_fh}   : undef;
+  my $err  = exists $args{err_fh}    ? $args{err_fh}    : undef;
+  my @cmds = map { scalar $_->spec() } @{$self->{cmds}};
+  #print Dumper $src, $sink, $err, \@cmds;
+  @{$self->{pids}} = pipeline_c( $src, $sink, $err, @cmds );
   return $self;
 }
 
-
-
-
-sub push_cmd {
-  my ($self, @args) = @_;
-  push @{$self->{cmds}}, \@args;
-  return $self;
-}
-
-sub unshift_cmd {
-  my ($self, @args) = @_;
-  unshift @{$self->{cmds}}, \@args;
-  return $self;
-}
 
 # This is so non-portable... I can't find a CPAN dist for this???
 sub _proc_path_from_fh {
@@ -135,40 +119,6 @@ sub _proc_path_from_fh {
     $OSNAME =~ /MacOS|darwin/i ? "/dev/fd/".fileno(shift) :
     return;
 }
-
-# a writable fh for the pipeline's source, if available
-sub source_fh {
-  return shift->{source_fh};
-}
-
-# a writable path for the source, if available. (not all handles
-# have paths, and some OSes don't have paths for all types of
-# handles, for example, pipes on Windows, AFAIK)
-sub source_fn {
-  return _proc_path_from_fh(shift->source_fh);
-}
-
-# a readable fh for the pipeline's sink, if available
-sub sink_fh {
-  return shift->{sink_fh};
-}
-
-# a readable path for the sink, if available
-sub sink_fn {
-  return _proc_path_from_fh(shift->sink_fh);
-}
-
-# a readable fh for the pipeline's err output, if available
-sub err_fh {
-  return shift->{err_fh};
-}
-
-# a readable path for the err output, if available
-sub err_fn {
-  return _proc_path_from_fh(shift->err_fh);
-}
-
-
 
 1 && q{this expression is true};
 
@@ -184,6 +134,7 @@ package
   IPC::Pipeline::Continuous;
 
 use POSIX ();
+use Scalar::Util qw(reftype);
 
 BEGIN {
     use Exporter    ();
@@ -226,8 +177,8 @@ sub pipeline_c {
     # Create the initial pipe for passing data into standard input to the first
     # filter passed.
     #
-    pipe my ($child_out, $in) or die('Cannot create a file handle pair for standard input piping');
-
+#    pipe my ($child_out, $in) or die('Cannot create a file handle pair for standard input piping');
+     my $child_out = $_[0];
     #
     # Only create a standard error pipe if a standard error file handle glob
     # was passed in the 3rd argument position.
@@ -286,15 +237,15 @@ sub pipeline_c {
     # file descriptors for existing file handles are passed, an attempt will
     # be made to dup2() them as appropriate.
     #
-
+=pod
     if (!defined $_[0]) {
         $_[0] = $in;
     } elsif (ref $_[0] eq 'GLOB') {
-        open($_[0], '>&=', $in);
+      open($_[0], '>&=', $in);
+      #open($in, '>&=', $_[0]);
     } else {
         POSIX::dup2(fileno($in), $_[0]);
     }
-
     if (!defined $_[1]) {
         $_[1] = $child_out;
     } elsif (ref $_[1] eq 'GLOB') {
@@ -302,7 +253,7 @@ sub pipeline_c {
     } else {
         POSIX::dup2(fileno($child_out), $_[1]);
     }
-
+=cut
     if (!defined $_[2]) {
         $_[2] = $error_out;
     } elsif (ref $_[2] eq 'GLOB') {
@@ -320,12 +271,24 @@ sub pipeline_c {
 }
 
 sub pipeline {
-  if (ref($_[1]) ne 'GLOB') {
+
+  if (reftype($_[0]) ne 'GLOB' and reftype($_[1]) ne 'GLOB') {
     goto pipeline_c;
   }
-  pipe my($readme,$writeme);
-  open($_[1], '<&=', $readme);
-  return pipeline_c($_[0], $writeme, @_[2..$#_]);
+
+  my ($child_src, $child_sink) = @_[0,1];
+
+  if (reftype($_[0]) ne 'GLOB') {
+    pipe my($our_src), $child_src;
+    open($_[0], '>&=', $our_src);
+  }
+
+  if (reftype($_[0]) ne 'GLOB') {
+    pipe my($our_sink,$child_sink);
+    open($_[1], '<&=', $our_sink);
+  }
+
+  return pipeline_c($child_src, $child_sink, @_[2..$#_]);
 }
 
 

@@ -41,6 +41,20 @@ is_deeply \@pl2_cmd1_args, \@pl1_cmd1_args, "first command args from first and s
 
 is scalar @{$pl2->cmds->[2]->args}, 1, "third command in second pipeline has expected number of args";
 
+
+# run what we have right now...
+pipe my($myend, $sinkend);
+open my $src, '<', $0;
+my @pidinfo  = $pl2->run( source_fh => $src, sink_fh => $sinkend )->pids;
+my @statuses = map { waitpid($_, 0); $_ => ($? >> 8); } @pidinfo;
+close $sinkend;
+my $got = ''; while (sysread($myend, my $buf, 512)) { $got .= $buf; };
+my $expected = join '', map {s/.*//; $_} read_file $0;
+
+is $got, $expected, "it fucking WORKED!";
+
+done_testing;
+__END__
 # compose with yet another pipeline, one with a command that uses a placeholder for an argument
 my $pl3 = ipc_pipeline(
   $pl2,
