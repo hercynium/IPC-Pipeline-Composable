@@ -105,7 +105,7 @@ sub run {
   my $src  = exists $args{source_fh} ? $args{source_fh} : undef;
   my $sink = exists $args{sink_fh}   ? $args{sink_fh}   : undef;
   my $err  = exists $args{err_fh}    ? $args{err_fh}    : undef;
-  my @cmds = map { scalar $_->spec() } @{$self->{cmds}};
+  my @cmds = map { scalar $_->spec(%args) } @{$self->{cmds}};
   #print Dumper $src, $sink, $err, \@cmds;
   @{$self->{pids}} = pipeline_c( $src, $sink, $err, @cmds );
   return $self;

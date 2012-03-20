@@ -42,6 +42,7 @@ is_deeply \@pl2_cmd1_args, \@pl1_cmd1_args, "first command args from first and s
 is scalar @{$pl2->cmds->[2]->args}, 1, "third command in second pipeline has expected number of args";
 
 
+
 # run what we have right now...
 pipe my($myend, $sinkend);
 open my $src, '<', $0;
@@ -50,38 +51,47 @@ my @statuses = map { waitpid($_, 0); $_ => ($? >> 8); } @pidinfo;
 close $sinkend;
 my $got = ''; while (sysread($myend, my $buf, 512)) { $got .= $buf; };
 my $expected = join '', map {s/.*//; $_} read_file $0;
+close $sinkend;
+is $got, $expected, "second pipeline ran properly";
 
-is $got, $expected, "it fucking WORKED!";
 
-done_testing;
-__END__
+
 # compose with yet another pipeline, one with a command that uses a placeholder for an argument
 my $pl3 = ipc_pipeline(
   $pl2,
   ipc_command('cat', ipc_placeholder( 'catfile' ), '-'),
-  q{sed '/^$/d'}, # delete all blank lines
+  [ 'sed', '/^$/d' ], # delete all blank lines
 );
 
 my @pl3_cmds = $pl3->cmds;
-is scalar @pl3_cmds, 5, "second pipeline has expected number of commands";
+is scalar @pl3_cmds, 5, "third pipeline has expected number of commands";
 
 my @pl3_cmd3_args = $pl3_cmds[3]->args;
 is scalar @{$pl3_cmds[3]->args}, 2, "fourth command in third pipeline has expected number of args";
 
 
-done_testing;
-__END__
 
-# run the pipeline, supplying the placeholder. colect the output and check it.
-pipe my($myend, $sinkend);
-my %pidinfo = $pl3->run( source => $0, sink => $sinkend, catfile => $0)->pids;
-my %statuses =
-  map { waitpid($_, 0); $_ => ($? >> 8); }
-  keys %pidinfo;
+pipe $myend, $sinkend;
+open $src, '<', $0;
+@pidinfo  = $pl3->run( source_fh => $src, sink_fh => $sinkend, catfile => $0 )->pids;
+@statuses = map { waitpid($_, 0); $_ => ($? >> 8); } @pidinfo;
 close $sinkend;
-my $got = ''; while (sysread($myend, my $buf, 512)) { $got .= $buf; };
-my $expected = grep { ! /^$/ } read_file $0;
+$got = ''; while (sysread($myend, my $buf, 512)) { $got .= $buf; };
+$expected = join '', grep {!/^$/} read_file $0;
+close $sinkend;
+is $got, $expected, "third pipeline (with arg placeholder) ran properly";
 
-is $got, $expected, "it fucking WORKED!";
+
+pipe $myend, $sinkend;
+open $src, '<', $0;
+@pidinfo  = $pl3->run( source_fh => $src, sink_fh => $sinkend )->pids;
+@statuses = map { waitpid($_, 0); $_ => ($? >> 8); } @pidinfo;
+close $sinkend;
+$got = ''; while (sysread($myend, my $buf, 512)) { $got .= $buf; };
+$expected = '';
+close $sinkend;
+is $got, $expected, "third pipeline (without arg placeholder) ran properly";
+
+
 
 done_testing;
