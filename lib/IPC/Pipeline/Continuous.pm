@@ -8,14 +8,14 @@ use Data::Dumper;
 use Scalar::Util qw(reftype);
 
 BEGIN {
-    use Exporter    ();
-    use vars        qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS);
+  use Exporter ();
+  use vars     qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS);
 
-    $VERSION        = '0.4';
-    @ISA            = ('Exporter');
-    @EXPORT         = qw(pipeline pipeline_c);
-    @EXPORT_OK      = ();
-    %EXPORT_TAGS    = ();
+  $VERSION     = '0.4';
+  @ISA         = ('Exporter');
+  @EXPORT      = qw(pipeline pipeline_c);
+  @EXPORT_OK   = ();
+  %EXPORT_TAGS = ();
 }
 
 sub pipeline {
@@ -23,19 +23,23 @@ sub pipeline {
   pipe my ($child_out, $in);
   if (!defined $_[0]) {
     $_[0] = $in;
-  } elsif (reftype $_[0] eq 'GLOB') {
+  }
+  elsif (reftype $_[0] eq 'GLOB') {
     open($_[0], '>&=', $in);
-  } else {
+  }
+  else {
     POSIX::dup2(fileno($in), $_[0]);
   }
 
   pipe my ($out, $child_in);
   if (!defined $_[1]) {
     $_[1] = $out;
-  } elsif (reftype $_[1] eq 'GLOB') {
+  }
+  elsif (reftype $_[1] eq 'GLOB') {
     open($_[1], '<&=', $out);
     #open($out, '<&=', $_[1]);
-  } else {
+  }
+  else {
     POSIX::dup2(fileno($out), $_[1]);
   }
 
@@ -45,54 +49,56 @@ sub pipeline {
   }
   if (!defined $_[2]) {
     $_[2] = $error_out;
-  } elsif (reftype $_[2] eq 'GLOB') {
+  }
+  elsif (reftype $_[2] eq 'GLOB') {
     open($_[2], '<&=', $error_out);
-  } else {
+  }
+  else {
     POSIX::dup2(fileno($error_out), $_[2]);
   }
-
 
   pipeline_c($child_out, $child_in, $error_in, @_[3 .. $#_]);
 }
 
 sub pipeline_c {
-    my @filters = @_[3..$#_];
+  my @filters = @_[3..$#_];
 
-    return undef unless @filters;
+  return undef unless @filters;
 
-    foreach my $filter (@filters) {
-        next if reftype($filter) =~ /^CODE|ARRAY$/;
-        die('Filter passed is not a CODE reference or ARRAY containing command and arguments');
+  foreach my $filter (@filters) {
+    next if reftype($filter) =~ /^CODE|ARRAY$/;
+    die('Filter passed is not a CODE reference or ARRAY containing command and arguments');
+  }
+
+  my $child_out = my $in = $_[0];
+
+  # assign whatever for the child to use for stderr
+  my $error_in = $_[2];
+
+  #print STDERR "$$ parent output fileno: ", fileno($_[1]), "\n";
+
+  my @pids;
+  foreach my $i (0 .. $#filters) {
+    my $filter = $filters[$i];
+
+    my ($out, $child_in);
+    if ($i == $#filters and ref($_[1]) and reftype($_[1]) eq 'GLOB') {
+      $out = $child_in = $_[1];
+      #print STDERR "$$ last child output fileno: ", fileno($child_in), "\n";
+    }
+    else {
+      pipe $out, $child_in or die('Cannot create a file handle pair for standard output piping');
+      #print STDERR "$$ pipe ends for next child: ", fileno($child_in), " -> ", fileno($out), "\n";
     }
 
-    my $child_out = my $in = $_[0];
+    my $pid = fork_filter($child_out, $child_in, $error_in, $filter);
 
-    # assign whatever for the child to use for stderr
-    my $error_in = $_[2];
+    $child_out = $out;
 
-    #print STDERR "$$ parent output fileno: ", fileno($_[1]), "\n";
+    push @pids, $pid;
+  }
 
-    my @pids;
-    foreach my $i (0 .. $#filters) {
-        my $filter = $filters[$i];
-
-        my ($out, $child_in);
-        if ($i == $#filters and ref($_[1]) and reftype($_[1]) eq 'GLOB') {
-          $out = $child_in = $_[1];
-          #print STDERR "$$ last child output fileno: ", fileno($child_in), "\n";
-        }
-        else {
-          pipe $out, $child_in or die('Cannot create a file handle pair for standard output piping');
-          #print STDERR "$$ pipe ends for next child: ", fileno($child_in), " -> ", fileno($out), "\n";
-        }
-
-        my $pid = fork_filter($child_out, $child_in, $error_in, $filter);
-
-        $child_out = $out;
-        push @pids, $pid;
-    }
-
-    return wantarray ? @pids : $pids[0];
+  return wantarray ? @pids : $pids[0];
 }
 
 sub fork_filter {
@@ -123,15 +129,16 @@ sub fork_filter {
 }
 
 sub exec_filter {
-    my ($filter) = @_;
+  my ($filter) = @_;
 
-    if (reftype($filter) eq 'CODE') {
-        exit $filter->();
-    } elsif (reftype($filter) eq 'ARRAY') {
-        exec(@$filter) or die("Cannot exec(): $!");
-    }
+  if (reftype($filter) eq 'CODE') {
+    exit $filter->();
+  }
+  elsif (reftype($filter) eq 'ARRAY') {
+    exec(@$filter) or die("Cannot exec(): $!");
+  }
 
-    die('Invalid filter');
+  die('Invalid filter');
 }
 
 1;
