@@ -2,61 +2,68 @@
 use strict;
 use warnings;
 use Data::Dumper;
-use IPC::Pipeline::Composable;
 use autodie;
+use File::Slurp qw(read_file);
+use File::Temp qw(:seekable);
+use Test::More;
+use Capture::Tiny qw(:all);
 
-### new functionality!
+use_ok 'IPC::Pipeline::Composable' => qw(pipeline pipeline_c);
 
-# stream thru pipe to parent's STDERR
-waitpid($_, 1) for pipeline(
-  undef, \*STDERR, undef,
-  ['sort' => $0],
-  [qw(tr a-z A-Z)],
-  [qw(grep -Pv ^\s*$)],
-);
+my $expected = join '', (
+  grep { $_ !~ /^\s*$/ }
+  map { uc }
+  sort { $a cmp $b }
+  read_file($0)
+)[0..4];
 
-# same for STDOUT
-waitpid($_, 1) for pipeline(
-  undef, \*STDOUT, undef,
+my @filters = (
   ['sort' => $0],
   [qw(tr a-z A-Z)],
   sub { /^\s*$/ or print $_ while <>; 1 },
+  [qw(head -n 5)],
 );
 
-# really, same for *any* file-handle!
-open my $foo, '>', "$0.out";
-waitpid($_, 1) for pipeline(
-  undef, $foo, undef,
-  [cat => $0],
-  ['sort'],
-  sub { print scalar reverse while <>; 1},
-  [qw(tr a-z A-Z)]
-);
-close $foo;
 
-### documented functionality
-
-my @pids = pipeline(
-  my ($in, $out), undef,
-  ['sort'],
-  [qw(tr a-z A-Z)],
-  ['gtac'],
-);
-print $in "$_\n" for qw(wibble wobble weeble woo-hoo);
-close $in;
-while (my $len = sysread($out, my $buf, 512)) {
-  syswrite(STDOUT, $buf, $len);
+sub stdout_to_stdout {
+  waitpid($_, 0) for pipeline_c( undef, \*STDOUT, undef, @filters );
 }
-close $out;
-foreach my $pid (@pids) {
-  waitpid($pid, 1);
+
+sub stdout_to_stderr {
+  # stream thru pipe to parent's STDERR
+  waitpid($_, 0) for pipeline_c( undef, \*STDERR, undef, @filters );
+}
+
+sub no_output {
+  waitpid($_, 0) for pipeline_c( undef, undef, undef, @filters );
+}
+
+# really, same for *any* file-handle
+sub fh_output {
+  waitpid($_, 0) for pipeline_c( undef, shift(), undef, @filters );
 }
 
 
-__DATA__
-foo
-bar
-baz
-wibble wobble
-weeble
+my ($stdout, $stderr, @result);
 
+($stdout, $stderr, @result) = capture \&stdout_to_stdout;
+is $stdout, $expected, 'stdout streaming works';
+
+($stdout, $stderr, @result) = capture \&stdout_to_stderr;
+is $stderr, $expected, 'stderr streaming works';
+
+($stdout, $stderr, @result) = capture \&no_output;
+is $stdout, '', 'no stdout when no handle passed';
+
+($stdout, $stderr, @result) = capture \&no_output;
+is $stderr, '', 'no stderr when no handle passed';
+
+
+my $tmpfh = File::Temp->new(UNLINK => 1);
+fh_output($tmpfh);
+seek( $tmpfh, 0, SEEK_SET );
+#diag "Filename: " . $tmpfh->filename;
+is scalar read_file($tmpfh), $expected, 'streaming to filehandle works';
+
+
+done_testing;
