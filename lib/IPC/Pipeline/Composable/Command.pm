@@ -2,9 +2,12 @@ use strict;
 use warnings;
 package IPC::Pipeline::Composable::Command;
 # ABSTRACT: A command in a pipeline
-use English qw( -no_match_vars);
+use English qw( -no_match_vars );
 use Data::Dumper;
 use autodie;
+use POSIX qw(mkfifo O_NONBLOCK O_RDONLY O_WRONLY); # :sys_wait_h
+use File::Temp qw(tmpnam);
+use IPC::Pipeline::Composable qw( ipc_pipeline );
 
 sub new {
   my ($class,%opt) = @_;
@@ -21,6 +24,17 @@ sub spec {
     $self->{cmd_code} ? $self->{cmd_code} :
     [
       $self->{cmd},
+      map {
+        if (eval { $_->isa('IPC::Pipeline::Composable::Command') }) {
+          my $tf_name = tmpnam();
+          mkfifo $tf_name, 0700;
+          my $pl = ipc_pipeline($_);
+          print Dumper $tf_name, $_, $pl;
+          $pl->run( sink_file => $tf_name);
+          $_ = $tf_name;
+        }
+        $_;
+      }
       grep { defined }
       map {
         if (eval { $_->isa('IPC::Pipeline::Composable::Placeholder') }) {
@@ -29,6 +43,10 @@ sub spec {
         $_
       } map {my $foo = $_; $foo} @{ $self->{args} || [] }
     ];
+}
+
+sub __mk_tmpfifo {
+  
 }
 
 1 && q{this expression is true};

@@ -92,6 +92,15 @@ $expected = '';
 close $sinkend;
 is $got, $expected, "third pipeline (without arg placeholder) ran properly";
 
+pipe $myend, $sinkend;
+open $src, '<', $0;
+@pidinfo  = $pl3->run( source_fh => $src, sink_fh => $sinkend, catfile => ipc_command('cat', $0) )->pids;
+@statuses = map { waitpid($_, 0); $_ => ($? >> 8); } @pidinfo;
+close $sinkend;
+$got = ''; while (sysread($myend, my $buf, 512)) { $got .= $buf; };
+$expected = join '', grep {!/^$/} read_file $0;
+close $sinkend;
+is $got, $expected, "third pipeline (with command as arg placeholder) ran properly";
 
 
 done_testing;
