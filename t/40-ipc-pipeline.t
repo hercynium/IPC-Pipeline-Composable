@@ -30,7 +30,6 @@ sub stdout_to_stdout {
 }
 
 sub stdout_to_stderr {
-  # stream thru pipe to parent's STDERR
   waitpid($_, 0) for pipeline_c( undef, \*STDERR, undef, @filters );
 }
 
@@ -38,7 +37,6 @@ sub no_output {
   waitpid($_, 0) for pipeline_c( undef, undef, undef, @filters );
 }
 
-# really, same for *any* file-handle
 sub fh_output {
   waitpid($_, 0) for pipeline_c( undef, shift(), undef, @filters );
 }
