@@ -54,9 +54,6 @@ $expected =~ tr/a-mn-zA-MN-Z/n-za-mN-ZA-M/;
 close $sinkend;
 is $got, lc $expected, "second pipeline ran properly";
 
-done_testing;
-__END__
-
 
 # compose with yet another pipeline, one with a command that uses a placeholder for an argument
 my $pl3 = ipc_pipeline(
@@ -70,6 +67,9 @@ is scalar @pl3_cmds, 5, "third pipeline has expected number of commands";
 
 my @pl3_cmd3_args = $pl3_cmds[3]->args;
 is scalar @{$pl3_cmds[3]->args}, 2, "fourth command in third pipeline has expected number of args";
+
+done_testing;
+__END__
 
 
 
