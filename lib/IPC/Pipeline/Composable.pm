@@ -55,10 +55,10 @@ sub ipc_pipeline {
   return $class->new(
     cmds => [ map {
       eval { $_->isa("${class}::Process") } ? $_ :
-      eval { $_->isa($class) }              ? $_->procs :
+      eval { $_->isa($class) }              ? ($_->procs) :
       ! ref($_)              ? ${ \"${class}::Process" }->new(cmd_str => $_) :
       reftype($_) eq 'ARRAY' ? ${ \"${class}::Process" }->new(cmd => shift(@$_), args => $_) :
-      reftype($_) eq 'CODE'  ? ${ \"${class}::Process" }->new(cmd_code => $_) :
+      reftype($_) eq 'CODE'  ? ${ \"${class}::Process" }->new(cmd => $_) :
       die "unhandled type passed to ipc_pipeline!\n";
       # TODO: handle placeholders as commands
     } @cmds ]);
@@ -140,6 +140,10 @@ sub run {
   my @proc_specs;
   my %proc_sub_pipe;
   for my $proc ($self->procs) {
+    if (ref($proc->cmd) and ref($proc->cmd) eq 'CODE') {
+      push @proc_specs, $proc->cmd;
+      next;
+    }
     my @args;
     for my $arg ($proc->args) {
 

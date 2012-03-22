@@ -50,8 +50,9 @@ my @statuses = map { waitpid($_, 0); $_ => ($? >> 8); } @pidinfo;
 close $sinkend;
 my $got = ''; while (sysread($myend, my $buf, 512)) { $got .= $buf; };
 my $expected = join '', (read_file $0)[0 .. 4];
+$expected =~ tr/a-mn-zA-MN-Z/n-za-mN-ZA-M/;
 close $sinkend;
-is $got, $expected, "second pipeline ran properly";
+is $got, lc $expected, "second pipeline ran properly";
 
 done_testing;
 __END__
