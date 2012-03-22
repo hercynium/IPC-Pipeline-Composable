@@ -1,6 +1,7 @@
 use strict;
 use warnings;
 package IPC::Pipeline::Composable;
+# ABSTRACT: compose commands and pipelines
 use English qw( -no_match_vars);
 use Data::Dumper;
 use autodie;
@@ -18,7 +19,7 @@ BEGIN {
   our %EXPORT_TAGS = ( all => \@EXPORT_OK );
 }
 
-use IPC::Pipeline::Composable::Command qw();
+use IPC::Pipeline::Composable::Process qw();
 use IPC::Pipeline::Composable::Placeholder qw();
 
 
@@ -30,7 +31,7 @@ sub new {
   my ($class, %args) = @_;
   my %self = (
     pids      => [],
-    cmds      => [ @{ $args{cmds} || [] } ],
+    procs      => [ @{ $args{cmds} || [] } ],
     (exists $args{source_fh} ? (source_fh => $args{source_fh}) : ()),
     (exists $args{sink_fh}   ? (sink_fh   => $args{sink_fh})   : ()),
     (exists $args{err_fh}    ? (serr_fh   => $args{err_fh})    : ()),
@@ -49,26 +50,26 @@ sub ipc_pipeline {
 
   return $class->new(
     cmds => [ map {
-      eval { $_->isa("${class}::Command") } ? $_ :
-      eval { $_->isa($class) }              ? $_->cmds :
-      ! ref($_)              ? ${ \"${class}::Command" }->new(cmd_str => $_) :
-      reftype($_) eq 'ARRAY' ? ${ \"${class}::Command" }->new(cmd => shift(@$_), args => $_) :
-      reftype($_) eq 'CODE'  ? ${ \"${class}::Command" }->new(cmd_code => $_) :
+      eval { $_->isa("${class}::Process") } ? $_ :
+      eval { $_->isa($class) }              ? $_->procs :
+      ! ref($_)              ? ${ \"${class}::Process" }->new(cmd_str => $_) :
+      reftype($_) eq 'ARRAY' ? ${ \"${class}::Process" }->new(cmd => shift(@$_), args => $_) :
+      reftype($_) eq 'CODE'  ? ${ \"${class}::Process" }->new(cmd_code => $_) :
       die "unhandled type passed to ipc_pipeline!\n";
       # TODO: handle placeholders as commands
     } @cmds ]);
 }
 
-=function ipc_command
+=function ipc_proc
 Construct a command from a series of arguments or placeholders
 =cut
-sub ipc_command {
+sub ipc_proc {
   my ($class, $cmd, @args) =
     !eval { $_[0]->isa(__PACKAGE__) } ? (__PACKAGE__, @_) :
     blessed($_[0])                    ? (__PACKAGE__, @_) :
     @_;
 
-  return ${ \"${class}::Command" }->new(cmd => $cmd, args => \@args);
+  return ${ \"${class}::Process" }->new(cmd => $cmd, args => \@args);
 }
 
 =function ipc_placeholder
@@ -83,35 +84,100 @@ sub ipc_placeholder {
   return ${ \"${class}::Placeholder" }->new(name => $name, %args);
 }
 
-=method cmds
-Get the list of commands that make up this pipeline
+=method procs
+Get the list of processes that make up this pipeline
 =cut
-sub cmds { my ($self) = @_; wantarray ? @{$self->{cmds}} : $self->{cmds} }
+sub procs { my ($self) = @_; wantarray ? @{$self->{procs}} : $self->{procs} }
 
 
 =method pids
-When the pipeline is running, get the list of process IDS of the commands.
+When the pipeline is running, get the list of process IDs.
 Please note - they may not all be running. Checking them is your (or another
 module's) job.
 =cut
 sub pids { my ($self) = @_; wantarray ? @{$self->{pids}} : $self->{pids} }
 
 
-=method run
-construct and run the pipeline from the cmd objects we've composed.
-TODO: describe options and other stuff
-=cut
-sub run {
-  my ($self, %args) = @_;
-  %args = (%$self, %args);
-  my $src  = exists $args{source_fh} ? $args{source_fh} : $args{source_file} ? __popenw($args{source_file}) : undef;
-  my $sink = exists $args{sink_fh}   ? $args{sink_fh} : $args{sink_file} ? __popenr($args{sink_file}) : undef;
+sub _get_opt_fhs {
+  my ($self, %opt) = @_;
+  %opt = (%$self, %opt);
+  # TODO: support opening files or using IO::Scalar for string refs.
+  my $src  = exists $args{source_fh} ? $args{source_fh} : undef;
+  my $sink = exists $args{sink_fh}   ? $args{sink_fh} : undef;
   my $err  = exists $args{err_fh}    ? $args{err_fh} : undef;
-  my @cmds = map { scalar $_->spec(%args) } @{$self->{cmds}};
-  #print Dumper $src, $sink, $err, \@cmds;
-  @{$self->{pids}} = pipeline_c( $src, $sink, $err, @cmds );
+  return ($src, $sink, $err);
+}
+
+
+# a bit longer than I would like, but it all seems necessary...
+sub run {
+  my ($self, %opt) = @_;
+
+  my ($src, $sink, $err) = $self->_get_opt_fhs(%opt);
+
+  my @cmd_sub_pids;
+  my @proc_specs;
+  for my $proc ($self->procs) {
+    my @args;
+    my %proc_sub_pipe;
+    for my $arg ($proc->args) {
+
+      # if it's an object, it might deserve some special treatment
+      if (blessed($arg)) {
+        if ($arg->isa(__PACKAGE__."::ProcessSub")) {
+          my $pipe = tempfile(); # race condition? probably.
+          mkfifo $pipe, 0700;
+          $proc_sub_pipe{$pipe} = $arg;
+          push @args, $pipe;
+          next;
+        }
+        if ($arg->isa(__PACKAGE__."::CommandSub")) {
+          my $buf = '';
+          push @cmd_sub_pids, $arg->run(output => \$buf);
+          push @args, $buf
+          next;
+        }
+      }
+      # didn't match anything above? stringify.
+      push @args, "$arg";
+    }
+
+    push @proc_specs, [$proc->cmd, @args];
+  }
+
+  # finally run the procs in this pipeline
+  my @pipeline_pids = pipeline_c($src, $sink, $err, @proc_specs);
+
+  # if there were any proc subs, now's the time to start them.
+  my @proc_sub_pids;
+  while ( my($pipe, $procsub) = each %proc_sub_pipe ) {
+    open my $fh, $procsub->mode, $pipe;
+    @proc_sub_pids = $procsub->run(
+      input  => ($procsub->mode eq '>' ? $fh : undef),
+      output => ($procsub->mode eq '<' ? $fh : undef),
+      error  => $err,
+    );
+  }
+
+  $self->{pids}          = \@pipeline_pids;
+  $self->{cmd_sub_pids}  = \@cmd_sub_pids;
+  $self->{proc_sub_pids} = \@proc_sub_pids;
+
   return $self;
 }
+
+
+# This is so non-portable... I can't find a CPAN dist for this???
+sub _proc_path_from_fh {
+  return
+    $OSNAME =~ /Linux/i        ? "/proc/self/fd/".fileno(shift) :
+    $OSNAME =~ /MacOS|darwin/i ? "/dev/fd/".fileno(shift) :
+    return;
+}
+
+1 && q{this expression is true};
+__END__
+
 
 =comment
 
@@ -130,10 +196,10 @@ Notes to self:
 
   And of course, placeholders...
       my $pl = ipc_cmd('gunzip', '-c', ipc_sub('<', 'gzip -c', ipc_placeholder('file')));
-      $pl->run(src => $src_fh, sink => $sink_fh, file => $0);
+      $pl->run(sink => $sink_fh, file => $0);
 
   To get really silly, perhaps this should work:
-      $pl->run(src_fh => $src_fh, sink_fh => $sink_fh, file => sub{ open my $f, '<', $0; print lc while <$f>; 1 });
+      $pl->run(sink_fh => $sink_fh, file => sub{ open my $f, '<', $0; print lc while <$f>; 1 });
     Description:
       - put a perl process that reads the current script as lowercase in the file placeholder
       - connect the stdout of that perl process to a fifo
@@ -142,21 +208,18 @@ Notes to self:
       - pass the name of that fifo as an argument to gunzip -c
       - connect the stdout of gunzip to the sink_fh so it will write to it
       * the result should be the script, in lowercase.
+
+    What should really happen:
+      - see the ipc_sub when scanning the gunzip command's args
+      - create a fifo/named pipe (store the path in a hash assocuated to the ipc_sub)
+      - start the gunzip process with its output connected to $sink_fh, passing the fifo as an argument in place of the ipc_sub
+      - start the gzip process with its output connected to the fifo for writing
 =cut
 
 
-use POSIX qw(mkfifo O_NONBLOCK O_RDONLY O_WRONLY); # :sys_wait_h
-sub __popenw { my $fh1 = __popenr(@_); sysopen my $fh, $_[0], O_NONBLOCK | O_WRONLY; $fh }
-sub __popenr { sysopen my $fh, $_[0], O_NONBLOCK | O_RDONLY; $fh }
 
-# This is so non-portable... I can't find a CPAN dist for this???
-sub _proc_path_from_fh {
-  return
-    $OSNAME =~ /Linux/i        ? "/proc/self/fd/".fileno(shift) :
-    $OSNAME =~ /MacOS|darwin/i ? "/dev/fd/".fileno(shift) :
-    return;
-}
+=pod
 
-1 && q{this expression is true};
+More ideas:
 
-
+=cut
