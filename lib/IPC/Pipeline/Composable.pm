@@ -7,7 +7,7 @@ use Data::Dumper;
 use autodie;
 use Scalar::Util qw(reftype blessed);
 use Fcntl;
-use File::Temp qw(tempfile);
+use File::Temp qw(tmpnam);
 use POSIX qw(mkfifo);
 
 #  IPC::Pipeline::Continuous is based off IPC::Pipeline, but works
@@ -146,7 +146,7 @@ sub run {
       # if it's an object, it might deserve some special treatment
       if (blessed($arg)) {
         if ($arg->isa(__PACKAGE__."::ProcessSub")) {
-          my $pipe = tempfile(); # race condition? probably.
+          my $pipe = tmpnam(); # race condition? probably.
           mkfifo $pipe, 0700;
           $proc_sub_pipe{$pipe} = $arg;
           push @args, $pipe;
@@ -172,12 +172,18 @@ sub run {
   # if there were any proc subs, now's the time to start them.
   my @proc_sub_pids;
   while ( my($pipe, $procsub) = each %proc_sub_pipe ) {
-    open my $fh, $procsub->mode, $pipe;
+
+    my $fmode =
+      $procsub->mode eq '>' ? '<' :
+      $procsub->mode eq '<' ? '>' : undef;
+
+    open my($fh), $fmode, $pipe;
     @proc_sub_pids = $procsub->run(
-      input  => ($procsub->mode eq '>' ? $fh : undef),
-      output => ($procsub->mode eq '<' ? $fh : undef),
-      error  => $err,
+      source_fh => ($procsub->mode eq '>' ? $fh : undef),
+      sink_fh   => ($procsub->mode eq '<' ? $fh : undef),
+      err_fh    => $err,
     );
+    unlink $pipe;
   }
 
   $self->{pids}          = \@pipeline_pids;
