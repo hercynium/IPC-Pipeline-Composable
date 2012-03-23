@@ -15,7 +15,8 @@ my $sub      = ipc_sub('<', $cmd);
 my $pl       = ipc_pipeline(ipc_cmd('sort', $sub));
 my @pidinfo  = $pl->run( sink_fh => $writefh )->pids;
 my @statuses = map { waitpid($_, 0); $_ => ($? >> 8); } @pidinfo;
-sysread($readfh, my $got, 512);
+close $writefh;
+my $got; while (sysread $readfh, my $buf, 512) { $got .= $buf }
 my $expected = join( '', sort +(read_file $0)[0 .. 4] );
 is $got, $expected, 'process substitution works!';
 done_testing;
