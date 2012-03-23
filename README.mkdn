@@ -1,0 +1,91 @@
+# NAME
+
+IPC::Pipeline::Composable - compose commands and pipelines
+
+# VERSION
+
+version 0.001
+
+# METHODS
+
+## new
+
+Standard constructor.
+
+## procs
+
+Get the list of processes that make up this pipeline
+
+## pids
+
+When the pipeline is running, get the list of process IDs.
+Please note - they may not all be running. Checking them is your (or another
+module's) job.
+
+## run
+
+Run the pipeline with the given inputs and outputs
+
+TODO: describe the arguments
+
+Construct a pipeline from a series of commands, placeholders or other pipelines
+
+Arguments represent processes to run, and each can be any one of the following:
+
+    my $pl = ipc_pipeline($obj, &some_sub, \@some_array, ...)
+
+Construct a process from a command and a series of arguments or placeholders
+
+Turn a pipeline or process into a process substitution
+
+Construct a placeholder with a name and arguments
+
+TODO: describe arguments
+
+SEE ALSO: the new() method in [IPC::Pipeline::Composable::Placeholder](http://search.cpan.org/perldoc?IPC::Pipeline::Composable::Placeholder)
+
+Notes to self:
+
+    The desired feature is to have shell-like process-substitution.
+
+    The way to do that in the API is to pass a pipeline or command as the argument for a command.
+
+    examples:
+      my $pl = ipc_pipeline(ipc_cmd('gunzip', '-c', ipc_sub('<', 'gzip -c', $0)));
+      my $pl = ipc_pipeline(ipc_cmd('gunzip', '-c', ipc_sub('<', ipc_cmd('gzip -c', $0))));
+
+    Technically, a command should just be a single-command pipeline.
+        my $pl = ipc_cmd('gunzip', '-c', ipc_sub('<', 'gzip -c', $0));
+
+    And of course, placeholders...
+        my $pl = ipc_cmd('gunzip', '-c', ipc_sub('<', 'gzip -c', ipc_placeholder('file')));
+        $pl->run(sink => $sink_fh, file => $0);
+
+    To get really silly, perhaps this should work:
+        $pl->run(sink_fh => $sink_fh, file => sub{ open my $f, '<', $0; print lc while <$f>; 1 });
+      Description:
+        - put a perl process that reads the current script as lowercase in the file placeholder
+        - connect the stdout of that perl process to a fifo
+        - pass the name of the fifo as an argument to gzip -c
+        - connect the stdout of gzip to a fifo
+        - pass the name of that fifo as an argument to gunzip -c
+        - connect the stdout of gunzip to the sink_fh so it will write to it
+        * the result should be the script, in lowercase.
+
+    What should really happen:
+      - see the ipc_sub when scanning the gunzip command's args
+      - create a fifo/named pipe (store the path in a hash assocuated to the ipc_sub)
+      - start the gunzip process with its output connected to $sink_fh, passing the fifo as an argument in place of the ipc_sub
+      - start the gzip process with its output connected to the fifo for writing
+=end notes
+
+# AUTHOR
+
+Stephen R. Scaffidi <stephen@scaffidi.net>
+
+# COPYRIGHT AND LICENSE
+
+This software is copyright (c) 2012 by Stephen R. Scaffidi.
+
+This is free software; you can redistribute it and/or modify it under
+the same terms as the Perl 5 programming language system itself.

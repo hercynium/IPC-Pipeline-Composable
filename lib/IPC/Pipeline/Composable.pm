@@ -1,7 +1,9 @@
 use strict;
 use warnings;
 package IPC::Pipeline::Composable;
+
 # ABSTRACT: compose commands and pipelines
+
 use English qw( -no_match_vars);
 use Data::Dumper;
 use autodie;
@@ -28,14 +30,18 @@ use IPC::Pipeline::Composable::CommandSub qw();
 
 
 =method new
+
 Standard constructor.
-TODO: describe options
+
+=for :list
+* procs - an arrayref of processes you want in this pipeline.
+
 =cut
 sub new {
   my ($class, %args) = @_;
   my %self = (
     pids      => [],
-    procs      => [ @{ $args{cmds} || [] } ],
+    procs      => [ @{ $args{procs} || [] } ],
     (exists $args{source_fh} ? (source_fh => $args{source_fh}) : ()),
     (exists $args{sink_fh}   ? (sink_fh   => $args{sink_fh})   : ()),
     (exists $args{err_fh}    ? (serr_fh   => $args{err_fh})    : ()),
@@ -44,28 +50,41 @@ sub new {
 }
 
 =function ipc_pipeline
+
 Construct a pipeline from a series of commands, placeholders or other pipelines
+
+Arguments represent processes to run, and each can be any one of the following:
+
+=for :list
+* arrayref - ['sort', '-k2,2', '-g']
+* subref   - sub { print map { join '', @$_ } sort { $a->[1] <=> $b->[1] } map { [split] } <> }
+* Object of type IPC::Pipeline::Composable::Process or IPC::Pipeline::Composable
+
+  my $pl = ipc_pipeline($obj, &some_sub, \@some_array, ...)
+
 =cut
 sub ipc_pipeline {
-  my ($class, @cmds) =
+  my ($class, @procs) =
     !eval { $_[0]->isa(__PACKAGE__) } ? (__PACKAGE__, @_) :
     blessed($_[0])                    ? (__PACKAGE__, @_) :
     @_;
 
   return $class->new(
-    cmds => [ map {
-      eval { $_->isa("${class}::Process") } ? $_ :
-      eval { $_->isa($class) }              ? ($_->procs) :
-      ! ref($_)              ? ${ \"${class}::Process" }->new(cmd_str => $_) :
-      reftype($_) eq 'ARRAY' ? ${ \"${class}::Process" }->new(cmd => shift(@$_), args => $_) :
-      reftype($_) eq 'CODE'  ? ${ \"${class}::Process" }->new(cmd => $_) :
+    procs => [ map {
+      eval { $_->isa("${class}::Process") } ? $_ :                                # use IPC::P as-is
+      eval { $_->isa($class) }              ? ($_->procs) :                       # unpack procs from an IPC
+      ! ref($_)              ? ${ \"${class}::Process" }->new(cmd_str => $_) :    # create a proc from string
+      reftype($_) eq 'ARRAY' ? ${ \"${class}::Process" }->new(cmd => shift(@$_), args => $_) : # create a proc from arrayref
+      reftype($_) eq 'CODE'  ? ${ \"${class}::Process" }->new(cmd => $_) :        # create a proc from a subref
       die "unhandled type passed to ipc_pipeline!\n";
-      # TODO: handle placeholders as commands
-    } @cmds ]);
+      # TODO: handle placeholders for processes
+    } @procs ]);
 }
 
 =function ipc_proc
-Construct a command from a series of arguments or placeholders
+
+Construct a process from a command and a series of arguments or placeholders
+
 =cut
 sub ipc_proc {
   my ($class, $cmd, @args) =
@@ -77,7 +96,9 @@ sub ipc_proc {
 }
 
 =function ipc_sub
+
 Turn a pipeline or process into a process substitution
+
 =cut
 sub ipc_sub {
   my ($class, $mode, @args) =
@@ -94,9 +115,13 @@ sub ipc_sub {
 sub ipc_cmd { goto &ipc_proc }
 
 =function ipc_placeholder
+
 Construct a placeholder with a name and arguments
+
 TODO: describe arguments
+
 SEE ALSO: the new() method in L<IPC::Pipeline::Composable::Placeholder>
+
 =cut
 sub ipc_placeholder {
   my ($class, $name, %args) =
@@ -106,15 +131,19 @@ sub ipc_placeholder {
 }
 
 =method procs
+
 Get the list of processes that make up this pipeline
+
 =cut
 sub procs { my ($self) = @_; wantarray ? @{$self->{procs}} : $self->{procs} }
 
 
 =method pids
+
 When the pipeline is running, get the list of process IDs.
 Please note - they may not all be running. Checking them is your (or another
 module's) job.
+
 =cut
 sub pids { my ($self) = @_; wantarray ? @{$self->{pids}} : $self->{pids} }
 
@@ -129,8 +158,14 @@ sub _get_opt_fhs {
   return ($src, $sink, $err);
 }
 
+=method run
 
-# a bit longer than I would like, but it all seems necessary...
+Run the pipeline with the given inputs and outputs
+
+TODO: describe the arguments
+
+=cut
+#a bit longer than I would like, but it all seems necessary...
 sub run {
   my ($self, %opt) = @_;
 
@@ -214,8 +249,7 @@ sub _proc_path_from_fh {
 1 && q{this expression is true};
 __END__
 
-
-=comment
+=begin notes
 
 Notes to self:
 
@@ -250,12 +284,5 @@ Notes to self:
       - create a fifo/named pipe (store the path in a hash assocuated to the ipc_sub)
       - start the gunzip process with its output connected to $sink_fh, passing the fifo as an argument in place of the ipc_sub
       - start the gzip process with its output connected to the fifo for writing
-=cut
+=end notes
 
-
-
-=pod
-
-More ideas:
-
-=cut
