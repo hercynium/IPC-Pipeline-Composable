@@ -1,7 +1,14 @@
-package IPC::Pipeline::Continuous;
-
 use strict;
 use warnings;
+package IPC::Pipeline::Continuous;
+
+# ABSTRACT: a pipeline where the ends don't have to be 'pumped'
+
+###
+### THIS CODE BASED HEAVILY ON IPC::Pipeline v0.4
+### BY Erin Schönhals <wrath@cpan.org>.
+### HOWEVER, THE BUGS ARE ALL MINE :)
+###
 
 use POSIX ();
 use Data::Dumper;
@@ -9,9 +16,8 @@ use Scalar::Util qw(reftype);
 
 BEGIN {
   use Exporter ();
-  use vars     qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS);
+  use vars     qw(@ISA @EXPORT @EXPORT_OK %EXPORT_TAGS);
 
-  $VERSION     = '0.4';
   @ISA         = ('Exporter');
   @EXPORT      = qw(pipeline pipeline_c);
   @EXPORT_OK   = ();
@@ -145,13 +151,9 @@ sub exec_filter {
 
 __END__
 
-=head1 NAME
-
-IPC::Pipeline - Create a shell-like pipeline of many running commands
-
 =head1 SYNOPSIS
 
-    use IPC::Pipeline;
+    use IPC::Pipeline::Continuous;
 
     my @pids = pipeline(\*FIRST_CHLD_IN, \*LAST_CHLD_OUT, \*CHILDREN_ERR,
         [qw(filter1 args)],
@@ -168,6 +170,16 @@ IPC::Pipeline - Create a shell-like pipeline of many running commands
         $_ => ($? >> 8);
     } @pids;
 
+=head1 ATTRIBUTION
+
+The code in this module is based B<heavily> on L<IPC::Pipeline> v0.4 by
+Erin Schönhals <wrath@cpan.org>. Like, I copied almost all of it directly.
+While I made a number of modifications, L<IPC::Pipeline::Continuous>
+I<should> work as a drop-in-replacement, and so I've kept her documentation.
+(it does pass all of IPC::Pipeline's tests). The new functionality I added
+is highly experimental and is currently only suitable for use by folks who
+are willing to read the code, hence it not being documented at this time.
+
 =head1 DESCRIPTION
 
 Similar in calling convention to IPC::Open3, pipeline() spawns N children,
@@ -179,7 +191,7 @@ using dup2() to chain each process' standard input to the last standard output.
 
 =head2 FEATURES
 
-IPC::Pipeline accepts external commands to be executed in the form of ARRAY
+IPC::Pipeline::Continuous accepts external commands to be executed in the form of ARRAY
 references containing the command name and each argument, as well as CODE
 references that are executed within their own processes as well, each as
 independent parts of a pipeline.
