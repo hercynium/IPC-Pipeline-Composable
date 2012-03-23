@@ -162,6 +162,11 @@ sub run {
           push @args, $buf;
           next;
         }
+        if ($arg->isa(__PACKAGE__."::Placeholder")) {
+          #print Dumper $arg, $arg->name, $opt{$arg->name}; exit;
+          push @args, $opt{$arg->name} if $opt{$arg->name};
+          next;
+        }
       }
       # didn't match anything above? stringify.
       push @args, "$arg";
