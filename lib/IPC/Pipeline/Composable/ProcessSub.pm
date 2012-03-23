@@ -1,16 +1,17 @@
 use strict;
 use warnings;
 package IPC::Pipeline::Composable::ProcessSub;
+
 # ABSTRACT: An object for performing Process Substitution
-use English qw( -no_match_vars);
-use Data::Dumper;
-use autodie;
+
 use parent qw(IPC::Pipeline::Composable);
+
 sub new {
   my ($class, %opt) = @_;
-  $opt{procs} = [$opt{proc}->procs];
+  $opt{procs} = [ $opt{proc}->procs ];
   return bless my $self = { %opt }, $class;
 }
+
 sub mode { shift->{mode} };
 
 1 && q{this expression is true};

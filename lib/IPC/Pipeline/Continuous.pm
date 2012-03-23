@@ -12,6 +12,7 @@ package IPC::Pipeline::Continuous;
 
 use POSIX ();
 use Data::Dumper;
+use autodie;
 use Scalar::Util qw(reftype);
 
 BEGIN {
@@ -26,7 +27,8 @@ BEGIN {
 
 sub pipeline {
 
-  pipe my ($child_out, $in);
+  my ($child_out, $in);
+  pipe $child_out, $in;
   if (!defined $_[0]) {
     $_[0] = $in;
   }
@@ -37,22 +39,20 @@ sub pipeline {
     POSIX::dup2(fileno($in), $_[0]);
   }
 
-  pipe my ($out, $child_in);
+  my ($out, $child_in);
+  pipe $out, $child_in;
   if (!defined $_[1]) {
     $_[1] = $out;
   }
   elsif (reftype $_[1] eq 'GLOB') {
     open($_[1], '<&=', $out);
-    #open($out, '<&=', $_[1]);
   }
   else {
     POSIX::dup2(fileno($out), $_[1]);
   }
 
   my ($error_out, $error_in);
-  if (defined $_[2]) {
-    pipe $error_out, $error_in;
-  }
+  pipe $error_out, $error_in;
   if (!defined $_[2]) {
     $_[2] = $error_out;
   }
@@ -63,7 +63,7 @@ sub pipeline {
     POSIX::dup2(fileno($error_out), $_[2]);
   }
 
-  pipeline_c($child_out, $child_in, $error_in, @_[3 .. $#_]);
+  return pipeline_c($child_out, $child_in, $error_in, @_[3 .. $#_]);
 }
 
 sub pipeline_c {

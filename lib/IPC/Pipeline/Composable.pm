@@ -4,22 +4,29 @@ package IPC::Pipeline::Composable;
 
 # ABSTRACT: compose commands and pipelines
 
-use English qw( -no_match_vars);
+use English qw( -no_match_vars );
 use Data::Dumper;
 use autodie;
-use Scalar::Util qw(reftype blessed);
-use Fcntl;
-use File::Temp qw(tmpnam);
-use POSIX qw(mkfifo);
+use Scalar::Util qw( reftype blessed );
+use File::Temp qw( tmpnam );
+use POSIX qw( mkfifo );
 
 #  IPC::Pipeline::Continuous is based off IPC::Pipeline, but works
 #  in a slightly different manner. (final FH is not linked to a pipe)
-use IPC::Pipeline::Continuous qw(pipeline_c pipeline);
+use IPC::Pipeline::Continuous qw( pipeline_c pipeline );
 
 BEGIN {
-  use parent qw(Exporter);
+  use parent qw( Exporter );
   use vars qw( @EXPORT_OK %EXPORT_TAGS );
-  our @EXPORT_OK = qw( ipc_pipeline ipc_cmd ipc_proc ipc_sub ipc_placeholder pipeline_c pipeline);
+  our @EXPORT_OK = qw(
+    ipc_pipeline
+    ipc_cmd
+    ipc_proc
+    ipc_sub
+    ipc_placeholder
+    pipeline_c
+    pipeline
+  );
   our %EXPORT_TAGS = ( all => \@EXPORT_OK );
 }
 
@@ -37,6 +44,7 @@ Standard constructor.
 * procs - an arrayref of processes you want in this pipeline.
 
 =cut
+
 sub new {
   my ($class, %args) = @_;
   my %self = (
@@ -48,6 +56,10 @@ sub new {
   );
   return bless \%self, $class;
 }
+
+
+
+
 
 =function ipc_pipeline
 
@@ -63,6 +75,7 @@ Arguments represent processes to run, and each can be any one of the following:
   my $pl = ipc_pipeline($obj, &some_sub, \@some_array, ...)
 
 =cut
+
 sub ipc_pipeline {
   my ($class, @procs) =
     !eval { $_[0]->isa(__PACKAGE__) } ? (__PACKAGE__, @_) :
@@ -71,14 +84,29 @@ sub ipc_pipeline {
 
   return $class->new(
     procs => [ map {
-      eval { $_->isa("${class}::Process") } ? $_ :                                # use IPC::P as-is
-      eval { $_->isa($class) }              ? ($_->procs) :                       # unpack procs from an IPC
-      ! ref($_)              ? ${ \"${class}::Process" }->new(cmd_str => $_) :    # create a proc from string
-      reftype($_) eq 'ARRAY' ? ${ \"${class}::Process" }->new(cmd => shift(@$_), args => $_) : # create a proc from arrayref
-      reftype($_) eq 'CODE'  ? ${ \"${class}::Process" }->new(cmd => $_) :        # create a proc from a subref
+      # IPC::Process object can be used as-is
+      eval { $_->isa("${class}::Process") } ? $_ :
+      # IPC object needs its processes extracted
+      eval { $_->isa($class) }              ? ($_->procs) :
+      # If it's a non-ref, try to stringify and use that as the process spec
+      ! ref($_)              ? ${ \"${class}::Process" }->new(cmd_str => $_) :
+      # Initialize a Process object from an arrayref
+      reftype($_) eq 'ARRAY' ? ${ \"${class}::Process" }->new(cmd => shift(@$_), args => $_) :
+      # Initialize a Process object from a subref
+      reftype($_) eq 'CODE'  ? ${ \"${class}::Process" }->new(cmd => $_) :
+      # unknown argument? DIE!
       die "unhandled type passed to ipc_pipeline!\n";
       # TODO: handle placeholders for processes
     } @procs ]);
+}
+
+
+# allow exported subs to be called as functions, or object/class methods.
+sub __func_meth_args {
+  return
+    !eval { $_[0]->isa(__PACKAGE__) } ? (__PACKAGE__, @_) : # function call
+    blessed($_[0])                    ? (__PACKAGE__, @_) : # object method call
+    @_;                                                     # class method call
 }
 
 =function ipc_proc
@@ -86,25 +114,22 @@ sub ipc_pipeline {
 Construct a process from a command and a series of arguments or placeholders
 
 =cut
+
 sub ipc_proc {
-  my ($class, $cmd, @args) =
-    !eval { $_[0]->isa(__PACKAGE__) } ? (__PACKAGE__, @_) :
-    blessed($_[0])                    ? (__PACKAGE__, @_) :
-    @_;
+  my ($class, $cmd, @args) = __func_meth_args(@_);
 
   return ${ \"${class}::Process" }->new(cmd => $cmd, args => \@args);
 }
+
 
 =function ipc_sub
 
 Turn a pipeline or process into a process substitution
 
 =cut
+
 sub ipc_sub {
-  my ($class, $mode, @args) =
-    !eval { $_[0]->isa(__PACKAGE__) } ? (__PACKAGE__, @_) :
-    blessed($_[0])                    ? (__PACKAGE__, @_) :
-    @_;
+  my ($class, $mode, @args) = __func_meth_args(@_);
 
   return ${ \"${class}::ProcessSub" }->new(
     mode => $mode,
@@ -112,7 +137,7 @@ sub ipc_sub {
   );
 }
 
-sub ipc_cmd { goto &ipc_proc }
+
 
 =function ipc_placeholder
 
@@ -123,19 +148,25 @@ TODO: describe arguments
 SEE ALSO: the new() method in L<IPC::Pipeline::Composable::Placeholder>
 
 =cut
+
 sub ipc_placeholder {
-  my ($class, $name, %args) =
-    !eval { $_[0]->isa(__PACKAGE__) } ? (__PACKAGE__, @_) : @_;
+  my ($class, $name, %args) = __func_meth_args(@_);
 
   return ${ \"${class}::Placeholder" }->new(name => $name, %args);
 }
+
+
+
+
 
 =method procs
 
 Get the list of processes that make up this pipeline
 
 =cut
+
 sub procs { my ($self) = @_; wantarray ? @{$self->{procs}} : $self->{procs} }
+
 
 
 =method pids
@@ -145,18 +176,42 @@ Please note - they may not all be running. Checking them is your (or another
 module's) job.
 
 =cut
-sub pids { my ($self) = @_; wantarray ? @{$self->{pids}} : $self->{pids} }
+
+sub pids {
+  my ($self) = @_;
+  return wantarray ? @{$self->{pids}} : [ @{$self->{pids}} ];
+}
+
+sub cmd_sub_pids  {
+  my ($self) = @_;
+  return wantarray ? @{$self->{cmd_sub_pids}} : [ @{$self->{cmd_sub_pids}} ];
+}
+
+sub proc_sub_pids {
+  my ($self) = @_;
+  return wantarray ? @{$self->{proc_sub_pids}} : [ @{$self->{proc_sub_pids}} ];
+}
+
+sub all_pids {
+  my ($self) = @_;
+  return (
+    @{$self->{pids}},
+    @{$self->{cmd_sub_pids}},
+    @{$self->{proc_sub_pids}},
+  );
+}
 
 
 sub _get_opt_fhs {
   my ($self, %opt) = @_;
   %opt = (%$self, %opt);
-  # TODO: support opening files or using IO::Scalar for string refs.
+  # TODO: support opening files for the user
   my $src  = exists $opt{source_fh} ? $opt{source_fh} : undef;
   my $sink = exists $opt{sink_fh}   ? $opt{sink_fh} : undef;
   my $err  = exists $opt{err_fh}    ? $opt{err_fh} : undef;
   return ($src, $sink, $err);
 }
+
 
 =method run
 
@@ -165,7 +220,9 @@ Run the pipeline with the given inputs and outputs
 TODO: describe the arguments
 
 =cut
-#a bit longer than I would like, but it all seems necessary...
+
+# this sub id a bit longer than I would like,
+# but it all seems necessary...
 sub run {
   my ($self, %opt) = @_;
 
@@ -193,13 +250,14 @@ sub run {
         }
         if ($arg->isa(__PACKAGE__."::CommandSub")) {
           my $buf = '';
-          push @cmd_sub_pids, $arg->run(output => \$buf);
+          push @cmd_sub_pids, $arg->run(output => \$buf)->all_pids;
           push @args, $buf;
           next;
         }
         if ($arg->isa(__PACKAGE__."::Placeholder")) {
           #print Dumper $arg, $arg->name, $opt{$arg->name}; exit;
           push @args, $opt{$arg->name} if $opt{$arg->name};
+          # TODO: handle placeholder that isa ProcessSub, Process, or hmmmm...
           next;
         }
       }
@@ -214,8 +272,21 @@ sub run {
   my @pipeline_pids = pipeline_c($src, $sink, $err, @proc_specs);
 
   # if there were any proc subs, now's the time to start them.
+  my @proc_sub_pids = __do_process_substitution(\%proc_sub_pipe, $err);
+
+  $self->{pids}          = \@pipeline_pids;
+  $self->{cmd_sub_pids}  = \@cmd_sub_pids;
+  $self->{proc_sub_pids} = \@proc_sub_pids;
+
+  return $self;
+}
+
+
+sub __do_process_substitution {
+  my ($proc_sub_pipe, $err) = @_;
+
   my @proc_sub_pids;
-  while ( my($pipe, $procsub) = each %proc_sub_pipe ) {
+  while ( my($pipe, $procsub) = each %$proc_sub_pipe ) {
 
     my $fmode =
       $procsub->mode eq '>' ? '<' :
@@ -230,16 +301,11 @@ sub run {
     unlink $pipe;
   }
 
-  $self->{pids}          = \@pipeline_pids;
-  $self->{cmd_sub_pids}  = \@cmd_sub_pids;
-  $self->{proc_sub_pids} = \@proc_sub_pids;
-
-  return $self;
+  return @proc_sub_pids;
 }
 
-
 # This is so non-portable... I can't find a CPAN dist for this???
-sub _proc_path_from_fh {
+sub __proc_path_from_fh {
   return
     $OSNAME =~ /Linux/i        ? "/proc/self/fd/".fileno(shift) :
     $OSNAME =~ /MacOS|darwin/i ? "/dev/fd/".fileno(shift) :
