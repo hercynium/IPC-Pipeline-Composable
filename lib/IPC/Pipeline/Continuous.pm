@@ -173,10 +173,10 @@ __END__
 =head1 ATTRIBUTION
 
 The code in this module is based B<heavily> on L<IPC::Pipeline> v0.4 by
-Erin Schönhals <wrath@cpan.org>. Like, I copied almost all of it directly.
-While I made a number of modifications, L<IPC::Pipeline::Continuous>
+Erin Schönhals (<wrath@cpan.org>). Heavily as in, I copied almost all of it
+directly. While I made a number of modifications, L<IPC::Pipeline::Continuous>
 I<should> work as a drop-in-replacement, and so I've kept her documentation.
-(it does pass all of IPC::Pipeline's tests). The new functionality I added
+It does pass all of IPC::Pipeline's tests. The new functionality I added
 is highly experimental and is currently only suitable for use by folks who
 are willing to read the code, hence it not being documented at this time.
 

@@ -12,7 +12,7 @@ use File::Temp qw( tmpnam );
 use POSIX qw( mkfifo );
 
 #  IPC::Pipeline::Continuous is based off IPC::Pipeline, but works
-#  in a slightly different manner. (final FH is not linked to a pipe)
+#  in a slightly different manner. (FHs are not linked to a pipe)
 use IPC::Pipeline::Continuous qw( pipeline_c pipeline );
 
 BEGIN {
@@ -165,7 +165,10 @@ Get the list of processes that make up this pipeline
 
 =cut
 
-sub procs { my ($self) = @_; wantarray ? @{$self->{procs}} : $self->{procs} }
+sub procs {
+  my ($self) = @_;
+  return wantarray ? @{$self->{procs}} : [ @{$self->{procs}} ];
+}
 
 
 
