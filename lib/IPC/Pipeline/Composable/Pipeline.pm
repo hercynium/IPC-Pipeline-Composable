@@ -1,6 +1,6 @@
 use strict;
 use warnings;
-package IPC::Pipeline::Composable;
+package IPC::Composable::Pipeline;
 
 # ABSTRACT: compose commands and pipelines
 
@@ -30,10 +30,10 @@ BEGIN {
   our %EXPORT_TAGS = ( all => \@EXPORT_OK );
 }
 
-use IPC::Pipeline::Composable::Process qw();
-use IPC::Pipeline::Composable::Placeholder qw();
-use IPC::Pipeline::Composable::ProcessSub qw();
-use IPC::Pipeline::Composable::CommandSub qw();
+use IPC::Composable::Pipeline::Process qw();
+use IPC::Composable::Pipeline::Placeholder qw();
+use IPC::Composable::Pipeline::ProcessSub qw();
+use IPC::Composable::Pipeline::CommandSub qw();
 
 
 =method new
@@ -70,7 +70,7 @@ Arguments represent processes to run, and each can be any one of the following:
 =for :list
 * arrayref - ['sort', '-k2,2', '-g']
 * subref   - sub { print map { join '', @$_ } sort { $a->[1] <=> $b->[1] } map { [split] } <> }
-* Object of type IPC::Pipeline::Composable::Process or IPC::Pipeline::Composable
+* Object of type IPC::Composable::Pipeline::Process or IPC::Composable::Pipeline
 
   my $pl = ipc_pipeline($obj, &some_sub, \@some_array, ...)
 
@@ -145,7 +145,7 @@ Construct a placeholder with a name and arguments
 
 TODO: describe arguments
 
-SEE ALSO: the new() method in L<IPC::Pipeline::Composable::Placeholder>
+SEE ALSO: the new() method in L<IPC::Composable::Pipeline::Placeholder>
 
 =cut
 

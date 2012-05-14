@@ -113,15 +113,10 @@ sub fork_filter {
   my $pid = fork();
   return $pid if $pid;
 
-  #print STDERR "$$ child filter: " . Dumper $filter;
-  #print STDERR "$$ child in -> out: ", fileno($src), " -> ", fileno($sink), "\n" if defined $src and defined $sink;
-
-  #print STDERR "$$ child input fileno: ", fileno($src), "\n" if defined $src and !defined $sink;
   if (defined $src and fileno($src) != fileno(STDIN)) {
     open(STDIN, '<&', $src) or die("Cannot dup2() to child $$ stdin");
   }
 
-  #print STDERR "$$ child output fileno: ", fileno($sink), "\n" if defined $sink and !defined $src;
   if (defined $sink and fileno($sink) != fileno(STDOUT)) {
     open(STDOUT, '>&', $sink) or die("Cannot dup2() to child $$ stdout");
   }
