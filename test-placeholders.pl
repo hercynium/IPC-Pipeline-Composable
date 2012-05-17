@@ -11,7 +11,7 @@ my $ph2 = IPC::Pipeline::Composable::Placeholder->new(name => 'bar');
 my $cmd1 = IPC::Pipeline::Composable::CmdProc->new(cmd => 'head', args => ['-n1', $ph1]);
 my $cmd2 = IPC::Pipeline::Composable::CmdProc->new(cmd => 'echo', args => [$ph2]);
 
-#print Dumper($cmd1->run(foo=>$0));
-print Dumper($cmd2->run(foo=>$0,bar=>$cmd1, stdout => \*STDOUT));
+print Dumper($cmd1->run(foo=>$0, stdout => \*STDERR));
+print Dumper($cmd2->run(foo=>$0, bar=>$cmd1, stdout => \*STDOUT));
 
 print "OK\n";
