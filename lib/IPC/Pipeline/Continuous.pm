@@ -112,17 +112,18 @@ sub fork_filter {
 
   my $pid = fork();
   return $pid if $pid;
+  die "Couldn't fork: $!" unless defined $pid;
 
   if (defined $src and fileno($src) != fileno(STDIN)) {
-    open(STDIN, '<&', $src) or die("Cannot dup2() to child $$ stdin");
+    open(STDIN, '<&', $src) or die("Cannot dup2() to child $$ stdin: $!");
   }
 
   if (defined $sink and fileno($sink) != fileno(STDOUT)) {
-    open(STDOUT, '>&', $sink) or die("Cannot dup2() to child $$ stdout");
+    open(STDOUT, '>&', $sink) or die("Cannot dup2() to child $$ stdout: $!");
   }
 
   if (defined $err and fileno($err) != fileno(STDERR)) {
-    open(STDERR, '>&', $err) or die("Cannot dup2() to child $$ stderr");
+    open(STDERR, '>&', $err) or die("Cannot dup2() to child $$ stderr: $!");
   }
 
   exec_filter($filter);
