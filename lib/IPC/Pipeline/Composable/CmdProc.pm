@@ -102,10 +102,9 @@ sub run {
   my @args = map { $self->_process_arg($_, \%procsub_pipes, \%opt) } $self->args;
   my @handles      = @opt{qw(stdin stdout stderr)};
   my $cmd_spec     = [$self->cmd, @args];
-  #print Dumper(\@handles);
-  #print Dumper($cmd_spec);
+  print Dumper(\@handles, $cmd_spec, \%opt, \%procsub_pipes) if $opt{debug};
   my @cmd_pids     = $self->_run_pipeline( @handles, $cmd_spec );
-  my @procsub_pids = __do_procsubs( \%procsub_pipes, $opt{stderr} );
+  my @procsub_pids = __do_procsubs( \%procsub_pipes, \%opt, $opt{stderr} );
   my @pids         = ( @cmd_pids, @procsub_pids );
   return wantarray ? @pids : \@pids;
 }
@@ -159,7 +158,7 @@ sub _process_arg {
 }
 
 sub __do_procsubs {
-  my ($procsub_pipes, $err) = @_;
+  my ($procsub_pipes, $opt, $err) = @_;
 
   my @procsub_pids;
   while ( my($pipe, $procsub) = each %$procsub_pipes ) {
@@ -170,9 +169,11 @@ sub __do_procsubs {
 
     open my($fh), $fmode, $pipe;
     push @procsub_pids, $procsub->run(
+      %$opt,
       stdin  => ($procsub->mode eq '>' ? $fh : undef),
       stdout => ($procsub->mode eq '<' ? $fh : undef),
       stderr => $err,
+      debug => 1,
     );
 
     unlink $pipe;

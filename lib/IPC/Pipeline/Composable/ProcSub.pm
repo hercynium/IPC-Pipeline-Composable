@@ -1,12 +1,12 @@
 use strict;
 use warnings;
-package IPC::Composable::Pipeline::ProcSub;
+package IPC::Pipeline::Composable::ProcSub;
 use Carp;
 
 # ABSTRACT: An object for performing Process Substitution
 
 # a substitution process is just a specialized pipeline
-use parent qw(IPC::Composable::Pipeline);
+use parent qw(IPC::Pipeline::Composable::CmdProc);
 
 sub new {
   my ($class, %opt) = @_;
