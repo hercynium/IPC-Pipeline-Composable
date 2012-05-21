@@ -2,7 +2,10 @@
 use strict;
 use warnings;
 use autodie;
-use IPC::Pipeline::Composable::Functions qw(:all);
+#use IPC::Pipeline::Composable::Functions qw(:all);
+use IPC::Run qw(harness);
+use File::Temp qw(tmpnam);
+use POSIX qw(mkfifo);
 
 my $input1_file = shift || die "need to specify first file for input";
 my $input2_file = shift || die "need to specify second file for input";
