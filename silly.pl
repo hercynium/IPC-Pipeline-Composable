@@ -6,6 +6,7 @@ use autodie;
 use IPC::Run qw(harness);
 use File::Temp qw(tmpnam);
 use POSIX qw(mkfifo);
+use Data::Dumper;
 
 my $input1_file = shift || die "need to specify first file for input";
 my $input2_file = shift || die "need to specify second file for input";
@@ -71,23 +72,27 @@ sub test3 {
 
   my $sort_cmd = harness
     ['sort', '-k1,1', $input1_file],
-    '0<' => undef,
+    '0<' => \undef,
     '1>' => $pipe,
     '2>' => \*STDERR;
 
   my $join_cmd = harness
     [ 'join', $pipe, '-' ],
-    '0<' => \$input2_fh,
-    '1>' => \*STDERR,
-    '2>' => \$err_fh;
+    '0<' => $input2_fh,
+    '1>' => \*STDOUT,
+    '2>' => $err_fh;
 
   $join_cmd->start();
-  my @join_pids = $join_cmd->_running_kids;
+  my @join_pids = map { $_->{PID} } $join_cmd->_running_kids;
 
   $sort_cmd->start();
-  my @sort_pids = $sort_cmd->_running_kids;
+  my @sort_pids = map { $_->{PID} } $sort_cmd->_running_kids;
 
-  # ???
+  #print Dumper \@join_pids, \@sort_pids;
+  wait for (@join_pids, @sort_pids);
 
   print "DONE\n";
 }
+
+test3();
+
