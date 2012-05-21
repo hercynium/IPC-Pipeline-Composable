@@ -8,6 +8,7 @@ use Carp;
 #use List::Util qw(first max maxstr min minstr reduce shuffle sum);
 #use Scalar::Util qw(blessed reftype openhandle);
 use Params::Util qw(_ARRAYLIKE _NUMBER _HANDLE);
+use IPC::Run;
 
 sub new {
   my ($class, %opt) = @_;
@@ -16,7 +17,7 @@ sub new {
   croak "the args parameter must be an arrayref or undef!\n"
     if defined $opt{args} and ! _ARRAYLIKE($opt{args});
 
-  my %fds = $class->_fds_from_opts(%opt);
+  my %fds = $class->_init_fds(%opt);
 
   return bless {
     fds => \%fds,
@@ -24,13 +25,15 @@ sub new {
   }, $class;
 }
 
-sub _fds_from_opts {
+sub _init_fds {
   my ($self, %opt) = @_;
 
   # get the STD* handles if specified and
   # get a copy of the fds hash to avoid, um... issues...
   my %fds;
-  @fds{0,1,2} = delete @opt{qw(stdin stdout stderr)};
+  $fds{0} = ['>', $opt{stdin}] if exists $opt{stdin};
+  $fds{1} = ['<', $opt{stdout}] if exists $opt{stdout};
+  $fds{2} = ['<', $opt{stderr}] if exists $opt{stderr};
   %fds        = (%fds, %{ delete $opt{fds} || {} });
 
   # make sure all fd names are numbers
@@ -44,7 +47,6 @@ sub _fds_from_opts {
   return %fds;
 }
 
-sub cmd    { die "This cmd method should be overridden by a derived class!\n" }
 sub args   { my $x = shift->{args} || []; wantarray ? @$x : $x }
 sub handle { shift->{fds}{shift} }
 sub stdin  { shift->{fds}{0} }
@@ -53,6 +55,8 @@ sub stderr { shift->{fds}{2} }
 
 # run the command, linking its fds to the specified handles
 sub run {
+  #croak "The run method should be overridden by a derived class!\n";
+  
 }
 
 =for comment

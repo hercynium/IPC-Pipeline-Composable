@@ -16,20 +16,20 @@ sub new {
 
   my $self = $class->SUPER::new(%opt);
 
-  croak "the cmd parameter is required!\n" unless $self->{cmd};
-  croak "the cmd parameter must be a string!\n" unless defined _STRING($_[0]);
+  croak "the cmd parameter is required!\n" unless $opt{cmd};
+  croak "the cmd parameter must be a string!\n" unless defined _STRING($opt{cmd});
 
   return bless $self, $class;
 }
 
 sub cmd { shift->{cmd} }
 
-sub run {
-  my ($self, %opt) = @_;
-  # I'd better read up:
-  # http://search.cpan.org/dist/IPC-Run/lib/IPC/Run.pm#Redirection_Operators
-
-}
+#sub run {
+#  my ($self, %opt) = @_;
+#  # I'd better read up:
+#  # http://search.cpan.org/dist/IPC-Run/lib/IPC/Run.pm#Redirection_Operators
+#
+#}
 
 
 1 && q{this statement is true};
