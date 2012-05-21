@@ -10,6 +10,7 @@ my $input2_file = shift || die "need to specify second file for input";
 open my $err_fh,    '>', 'join_errors.txt';
 open my $input2_fh, '<', $input2_file;
 
+# using full objects
 sub test1 {
   my $join_cmd = ipc_newcmd(
     cmd => 'join',
@@ -38,6 +39,7 @@ sub test1 {
   print "DONE\n";
 }
 
+# using simplified function-like syntax (still objects underneath)
 sub test2 {
   my $join_cmd = ipc_cmd(
     ['join', ipc_ph('input1'), ipc_ph('input2')],
@@ -54,6 +56,35 @@ sub test2 {
   );
 
   wait for $cmd_info->all_pids();
+
+  print "DONE\n";
+}
+
+# using IPC::Run, which is what the objects might invoke
+# underneath-the-hood...
+sub test3 {
+  my $pipe = tmpnam(); # race condition? probably.
+  mkfifo $pipe, 0700;
+
+  my $sort_cmd = harness
+    ['sort', '-k1,1', $input1_file],
+    '0<' => undef,
+    '1>' => $pipe,
+    '2>' => \*STDERR;
+
+  my $join_cmd = harness
+    [ 'join', $pipe, '-' ],
+    '0<' => \$input2_fh,
+    '1>' => \*STDERR,
+    '2>' => \$err_fh;
+
+  $join_cmd->start();
+  my @join_pids = $join_cmd->_running_kids;
+
+  $sort_cmd->start();
+  my @sort_pids = $sort_cmd->_running_kids;
+
+  # ???
 
   print "DONE\n";
 }
