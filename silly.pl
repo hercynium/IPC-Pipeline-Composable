@@ -3,19 +3,29 @@ use strict;
 use warnings;
 use autodie;
 #use IPC::Pipeline::Composable::Functions qw(:all);
+use IPC::Pipeline::Composable::Process qw(ipc_newcmd);
 use IPC::Run qw(harness);
 use File::Temp qw(tmpnam);
 use POSIX qw(mkfifo);
+use File::Slurp qw(read_file);
+use List::MoreUtils qw(pairwise);
 use Data::Dumper;
+use Capture::Tiny qw(capture);
+use Test::More;
 
-my $input1_file = shift || die "need to specify first file for input";
-my $input2_file = shift || die "need to specify second file for input";
+my $foo = ipc_newcmd(cmd=>'echo', args=>[$0], stdin => undef, stderr => \*STDERR);
+$foo->run(stdout => \*STDOUT, fds=>{3=>['>',undef]});
+exit;
+
+my $input1_file = $0; #shift || die "need to specify first file for input";
+my $input2_file = $0; #shift || die "need to specify second file for input";
 
 open my $err_fh,    '>', 'join_errors.txt';
 open my $input2_fh, '<', $input2_file;
 
 # using full objects
 sub test1 {
+
   my $join_cmd = ipc_newcmd(
     cmd => 'join',
     args => [
@@ -27,7 +37,7 @@ sub test1 {
 
   my $cmd_info = $join_cmd->run(
     input1 => ipc_newps(
-      mode => '<',
+      mode => '1<',
       ipc_newcmd(
         cmd  => 'sort',
         args => ['-k1,1', $input1_file],
@@ -45,14 +55,15 @@ sub test1 {
 
 # using simplified function-like syntax (still objects underneath)
 sub test2 {
+
   my $join_cmd = ipc_cmd(
-    ['join', ipc_ph('input1'), ipc_ph('input2')],
+    ['paste', ipc_ph('input1'), ipc_ph('input2')],
     stderr => $err_fh,
   );
 
   my $cmd_info = $join_cmd->run(
     input1 => ipc_ps(
-      '<', ['sort', '-k1,1', $input1_file],
+      '1<', ['sort', $input1_file],
     ),
     input2 => '-',
     stdin  => $input2_fh,
@@ -66,18 +77,21 @@ sub test2 {
 
 # using IPC::Run, which is what the objects might invoke
 # underneath-the-hood...
+# note that this isn't entirely semantically equivalent with the above examples
+# (no placeholders, for example)
 sub test3 {
+
   my $pipe = tmpnam(); # race condition? probably.
   mkfifo $pipe, 0700;
 
   my $sort_cmd = harness
-    ['sort', '-k1,1', $input1_file],
+    ['sort', $input1_file],
     '0<' => \undef,
     '1>' => $pipe,
     '2>' => \*STDERR;
 
   my $join_cmd = harness
-    [ 'join', $pipe, '-' ],
+    [ 'paste', $pipe, '-' ],
     '0<' => $input2_fh,
     '1>' => \*STDOUT,
     '2>' => $err_fh;
@@ -88,11 +102,18 @@ sub test3 {
   $sort_cmd->start();
   my @sort_pids = map { $_->{PID} } $sort_cmd->_running_kids;
 
-  #print Dumper \@join_pids, \@sort_pids;
   wait for (@join_pids, @sort_pids);
+  unlink $pipe;
 
-  print "DONE\n";
 }
 
-test3();
+my ($stdout, $stderr) = capture { test3() };
 
+no warnings 'once';
+my @lines1 = sort { $a cmp $b } read_file $0;
+my @lines2 = read_file $0;
+my $expected = join "", pairwise { chomp $a; "$a\t$b" } @lines1, @lines2;
+
+is $stdout, $expected, "output matches expected";
+
+done_testing;
