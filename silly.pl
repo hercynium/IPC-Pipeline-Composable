@@ -3,7 +3,7 @@ use strict;
 use warnings;
 use autodie;
 #use IPC::Pipeline::Composable::Functions qw(:all);
-use IPC::Pipeline::Composable::Process qw(ipc_newcmd);
+use IPC::Pipeline::Composable::Process::Command qw(ipc_newcmd);
 use IPC::Run qw(harness);
 use File::Temp qw(tmpnam);
 use POSIX qw(mkfifo);
@@ -13,8 +13,12 @@ use Data::Dumper;
 use Capture::Tiny qw(capture);
 use Test::More;
 
-my $foo = ipc_newcmd(cmd=>'echo', args=>[$0], stdin => undef, stderr => \*STDERR);
-$foo->run(stdout => \*STDOUT, fds=>{3=>['>',undef]});
+pipe my ($read), my ($write);
+my $foo = ipc_newcmd( cmd => 'sort', args => [ $0 ], stdin => undef, stderr => \*STDERR );
+my @pids = $foo->run( stdout => $write, fds => { 3 => [ '<', \undef ] } );
+wait for @pids;
+close $write;
+while (sysread($read, my $buf, 512)) { print $buf };
 exit;
 
 my $input1_file = $0; #shift || die "need to specify first file for input";
@@ -27,7 +31,7 @@ open my $input2_fh, '<', $input2_file;
 sub test1 {
 
   my $join_cmd = ipc_newcmd(
-    cmd => 'join',
+    cmd => 'paste',
     args => [
       ipc_newph(name => 'input1'),
       ipc_newph(name => 'input2'),
@@ -40,7 +44,7 @@ sub test1 {
       mode => '1<',
       ipc_newcmd(
         cmd  => 'sort',
-        args => ['-k1,1', $input1_file],
+        args => [$input1_file],
       )
     ),
     input2 => '-',

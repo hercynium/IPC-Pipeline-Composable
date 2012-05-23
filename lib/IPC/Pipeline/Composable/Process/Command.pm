@@ -9,7 +9,11 @@ use Carp;
 #use Scalar::Util qw(blessed reftype openhandle);
 use Params::Util qw(_STRING);
 
-use parent qw(IPC::Pipeline::Composable::Process);
+use parent qw(IPC::Pipeline::Composable::Process Exporter);
+
+our @EXPORT_OK = qw(ipc_newcmd);
+
+sub ipc_newcmd { return __PACKAGE__->new(@_) }
 
 sub new {
   my ($class, %opt) = @_;
@@ -22,7 +26,7 @@ sub new {
   return bless $self, $class;
 }
 
-sub cmd { shift->{cmd} }
+#sub cmd { shift->{cmd} }
 
 #sub run {
 #  my ($self, %opt) = @_;
