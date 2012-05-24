@@ -13,25 +13,17 @@ use Data::Dumper;
 use Capture::Tiny qw(capture);
 use Test::More;
 
-pipe my ($read), my ($write);
-my $foo = ipc_newcmd( cmd => 'sort', args => [ $0 ], stdin => undef, stderr => \*STDERR );
-my @pids = $foo->run( stdout => $write, fds => { 3 => [ '<', \undef ] } );
-wait for @pids;
-close $write;
-while (sysread($read, my $buf, 512)) { print $buf };
-exit;
-
 my $input1_file = $0; #shift || die "need to specify first file for input";
 my $input2_file = $0; #shift || die "need to specify second file for input";
 my $input3_file = $0; #shift || die "need to specify third file for input";
 
-open my $err_fh,    '>', 'join_errors.txt';
+open my $err_fh,    '>', 'cmd_errors.txt';
 
 # using IPC::Run, which is what the objects might invoke
 # underneath-the-hood...
 # note that this isn't entirely semantically equivalent with the above examples
 # (no placeholders, for example)
-sub test3 {
+sub test1 {
 
   my $sort_pipe = tmpnam(); # race condition? probably.
   mkfifo $sort_pipe, 0700;
@@ -72,28 +64,17 @@ sub test3 {
 
 }
 
-my ($stdout, $stderr) = capture { test3() };
-
-no warnings 'once';
-my @lines1 = sort { $a cmp $b } read_file $0;
-my @lines2 = read_file $0;
-my $expected = join "", pairwise { chomp $a; "$a\t$b" } @lines1, @lines2;
-
-is $stdout, $expected, "output matches expected";
-
-
-
 # using simplified function-like syntax (still objects underneath)
 # without using placeholders
-sub test4 {
+sub test2 {
 
   # paste stdin plus two other input files
   my $join_cmd = ipc_cmd(
     [
       'paste',
       '-',
-      ipc_ps('<', 'sort', $input1_file),
-      ipc_ps('<', 'tr', 'a-zA-Z', 'n-za-mN-ZA-M', $input2_file)
+      ipc_ps('<', ['sort', $input1_file]),
+      ipc_ps('<', ['tr', 'a-zA-Z', 'n-za-mN-ZA-M', $input2_file])
     ],
     stdin  => $input3_fh,
     stdout => \*STDERR,
@@ -103,10 +84,32 @@ sub test4 {
   my $cmd_info = $join_cmd->run;
 
   wait for $cmd_info->all_pids();
-
-  print "DONE\n";
 }
 
+# use pure-data-structure syntax
+# without using placeholders
+sub test3 {
+
+  # paste stdin plus two other input files
+  my $join_cmd = ipc_cmd(
+    [
+      'paste',
+      '-',
+      ['<', ['sort', $input1_file]],
+      ['<', ['tr', 'a-zA-Z', 'n-za-mN-ZA-M', $input2_file]]
+      [['echo', $1]],
+    ],
+    {
+      stdin  => $input3_fh,
+      stdout => \*STDERR,
+      stderr => $err_fh,
+    },
+  );
+
+  my $cmd_info = $join_cmd->run;
+
+  wait for $cmd_info->all_pids();
+}
 
 
 

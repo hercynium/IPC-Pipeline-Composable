@@ -11,7 +11,6 @@ use Params::Util qw(_ARRAYLIKE _NUMBER _HANDLE);
 use Data::Dumper;
 use IPC::Run qw(harness);
 
-
 sub new {
   my ($class, %opt) = @_;
 
