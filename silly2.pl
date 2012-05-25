@@ -3,7 +3,7 @@ use strict;
 use warnings;
 use autodie;
 #use IPC::Pipeline::Composable::Functions qw(:all);
-use IPC::Pipeline::Composable::Process::Command qw(ipc_newcmd);
+use IPC::Pipeline::Composable::Process qw(ipc_newcmd);
 use IPC::Run qw(harness);
 use File::Temp qw(tmpnam);
 use POSIX qw(mkfifo);
