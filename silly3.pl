@@ -20,6 +20,13 @@ my $input3_file = $0; #shift || die "need to specify third file for input";
 
 open my $err_fh, '>', 'cmd_errors.txt';
 
-my $cmd = ipc_cmd('cat', {stdin=>\*STDIN}, ['<', ['echo', $0]], {stdout => \*STDOUT, stdin=>undef});
+#my $cmd = ipc_cmd(
+#  'cat',
+#  { stdin => \*STDIN },
+#  ['<', ['echo', $0]],
+#  { stdout => \*STDOUT, stdin => undef },
+#);
+
+my $cmd = ipc_cmd('echo', $0, { stdout => \*STDERR });
 print Dumper $cmd;
 $cmd->run;

@@ -7,7 +7,8 @@ package IPC::Pipeline::Composable::Process::Command;
 use English qw(-no_match_vars);
 use Carp;
 use Data::Dumper;
-use Params::Util qw(_STRING _ARRAYLIKE _HASHLIKE);
+use Scalar::Util qw(reftype);
+use Params::Util qw(_STRING _ARRAYLIKE _HASHLIKE _NUMBER _HANDLE);
 use List::Util qw(reduce);
 use File::Temp qw(tmpnam);
 use POSIX qw(mkfifo);
@@ -17,8 +18,32 @@ use POSIX qw(mkfifo);
 #use IPC::Pipeline::Composable::ProcSubst qw(ipc_ps);
 #use IPC::Pipeline::Composable::PlaceHolder qw(ipc_ph);
 
-use parent qw(IPC::Pipeline::Composable::Process Exporter);
+use parent qw(Exporter);
 our @EXPORT_OK = qw(ipc_newcmd ipc_cmd);
+
+
+### CONSTRUCTOR ###
+
+sub new {
+  my ($class, %opt) = @_;
+
+  croak "the cmd parameter is required!\n" unless $opt{cmd};
+  croak "the cmd parameter must be a string!\n" unless defined _STRING($opt{cmd});
+
+  croak "the args parameter must be an arrayref or undef!\n"
+    if defined $opt{args} and ! _ARRAYLIKE($opt{args});
+
+  my $self = bless { %opt }, $class;
+
+  $self->{fds} = {$self->_init_fds(%opt)};
+
+  # _init_fds takes care of these, so they're junk now.
+  delete @{$self}{qw(stdout stdin stderr)};
+
+  return $self;
+}
+
+### COMMAND EXECUTION ###
 
 sub run {
   my ($self, %opt) = @_;
@@ -139,18 +164,64 @@ sub __is_ph_spec {
   return defined _STRING($spec->[0]);
 }
 
-### CONSTRUCTOR ###
+### HANDLE USER-SUPPLIED FDS ###
 
-sub new {
-  my ($class, %opt) = @_;
+# the user will likely specify that certain fds get mapped to file
+# handles (or *not* mapped). this sub validates the user's options
+# and sets up the mappings for use later on. it's kind of icky code,
+# but, meh.
+## TODO: forget about compat with IPC::Run. Trying to be compatible with it
+##       just seems too expensive in terms of code complexity right now.
+sub _init_fds {
+  my ($self, %opt) = @_;
 
-  croak "the cmd parameter is required!\n" unless $opt{cmd};
-  croak "the cmd parameter must be a string!\n" unless defined _STRING($opt{cmd});
+  # collect the FD=>[mode,handle] mappings in this:
+  my %fds;
 
-  my $self = $class->SUPER::new(%opt);
+  # get the STD* handle shortcuts, if specified
+  $fds{0} = [ '<', (exists $opt{stdin}  ? $opt{stdin}  : undef) ];
+  $fds{1} = [ '>', (exists $opt{stdout} ? $opt{stdout} : undef) ];
+  $fds{2} = [ '>', (exists $opt{stderr} ? $opt{stderr} : undef) ];
+  %fds = (%{$self->{fds} || {} }, %fds, %{ delete $opt{fds} || {} });
 
-  return bless $self, $class;
+  # make sure all fd specs contain valid handles
+  while ( my ($k, $v) = each %fds ) {
+
+    # make sure the fd name is a number
+    croak "error in fds hash: key [$k] is not a number\n"
+      unless defined _NUMBER($k);
+
+    # make sure the fd spec is an array or undef
+    croak "invalid handle spec for fd: [$k]: not an array ref\n"
+      unless defined $v and _ARRAYLIKE($v);
+    next unless defined $v;
+
+    my ($m, $h) = @$v;
+
+    # make sure the fd spec contains a valid mode
+    # note: IPC::Run takes richer modes - should we support those? how???
+    $m = "" unless defined $m;
+    croak "invalid mode for fd [$k]: [$m]" unless "$m" =~ /^[><]$/;
+
+    # make sure the fd spec contains a valid handle
+    next if !defined $h;
+    next if ref($h) and reftype($h) eq 'SCALAR' and !defined $$h;
+    croak "invalid handle for fd [$k]: [$h]\n" if ! _HANDLE($h);
+  }
+
+  return %fds;
 }
+
+
+### ACCESSORS ###
+
+sub cmd    { shift->{cmd} }
+sub args   { my $x = shift->{args} || []; wantarray ? @$x : $x }
+sub handle { shift->{fds}{shift}[1] }
+sub stdin  { shift->{fds}{0}[1] }
+sub stdout { shift->{fds}{1}[1] }
+sub stderr { shift->{fds}{2}[1] }
+
 
 ### EXPORTED SUBS ###
 
@@ -158,10 +229,24 @@ sub ipc_newcmd { return __PACKAGE__->new(@_) }
 
 sub ipc_cmd {
   my $cmd = shift;
-  my @args = grep { _ARRAYLIKE($_) } @_;
+  my @args = grep { ! _HASHLIKE($_) } @_;
   my $opt = reduce { %$a = (%$a, %$b); $a } grep { _HASHLIKE($_) } {},{}, @_;
-  return __PACKAGE__->new(%$opt, cmd => $cmd, args => [@args]);
+  return ipc_newcmd(%$opt, cmd => $cmd, args => [@args]);
 }
+
+
+=for comment
+
+maybe these methods would be useful:
+  last_pid - pid from the last time this command was run
+  last_status - exit status from the last time this command was run
+
+However, care should be taken to make them "atomic" with respect to
+each other and the state of the process - when ->run() is called,
+make sure to set last_status to undef to indicate that the process
+is still running!
+
+=cut
 
 
 1 && q{this statement is true};
