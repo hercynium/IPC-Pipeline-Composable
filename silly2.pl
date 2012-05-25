@@ -74,7 +74,8 @@ sub test2 {
       'paste',
       '-',
       ipc_ps('<', ['sort', $input1_file]),
-      ipc_ps('<', ['tr', 'a-zA-Z', 'n-za-mN-ZA-M', $input2_file])
+      ipc_ps('<', ['tr', 'a-zA-Z', 'n-za-mN-ZA-M', $input2_file]),
+      ipc_cs(['echo', $0]),
     ],
     stdin  => $input3_fh,
     stdout => \*STDERR,
@@ -97,7 +98,7 @@ sub test3 {
       '-',
       ['<', ['sort', $input1_file]],
       ['<', ['tr', 'a-zA-Z', 'n-za-mN-ZA-M', $input2_file]]
-      [['echo', $1]],
+      ['$', ['echo', $0]],
     ],
     {
       stdin  => $input3_fh,

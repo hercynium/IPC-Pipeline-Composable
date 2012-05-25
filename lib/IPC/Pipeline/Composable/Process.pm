@@ -33,52 +33,6 @@ sub stdout { shift->{fds}{1}[1] }
 sub stderr { shift->{fds}{2}[1] }
 
 
-
-# run the command, linking its fds to the specified handles
-sub run {
-  my ($self, %opt) = @_;
-  #croak "The run method should be overridden by a derived class!\n";
-  $self->{ipc_run_harness}->finish if $self->{ipc_run_harness};
-  my $harness = $self->{ipc_run_harness} = $self->_gen_ipc_run_harness(%opt);
-  $harness->start;
-  my @pids = map { $_->{PID} } $harness->_running_kids;
-  return wantarray ? @pids : \@pids;
-}
-
-sub _gen_ipc_run_harness {
-  my ($self, %opt) = @_;
-  my @ipc_run_cmd = ( $self->cmd, $self->args );
-  my @ipc_run_fds = $self->_gen_ipc_run_fds(%opt);
-  return harness \@ipc_run_cmd, @ipc_run_fds;#, debug => 1;
-}
-
-
-# turn the fd handle specs into specs for IPC::Run
-sub _gen_ipc_run_fds {
-  my ($self, %opt) = @_;
-
-  my @ipc_run_fds;
-
-  my %fds = $self->_init_fds(fds => $self->{fds}, %opt);
-  while ( my ($fd, $spec) = sort each %fds ) {
-    # IPC::Run only allows an undef ref for input handles
-    my $mode = $spec->[0];
-    my $hndl = $spec->[1];
-    next if $mode eq '<'
-      and !defined $hndl
-      or ( ref($hndl) and reftype($hndl) eq 'SCALAR' and !defined $$hndl );
-
-    # while this module accepts undef, IPC::Run needs a ref to undef...
-    $hndl = !defined $hndl ? \undef : $hndl;
-
-    push @ipc_run_fds, "$fd$mode", $hndl;
-  }
-
-  return @ipc_run_fds;
-}
-
-
-
 # the user will likely specify that certain fds get mapped to file
 # handles (or *not* mapped). this sub validates the user's options
 # and sets up the mappings for use later on. it's kind of icky code,
