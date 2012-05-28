@@ -2,7 +2,7 @@ use strict;
 use warnings;
 package IPC::Pipeline::Composable::Process;
 
-# ABSTRACT: A system command to be run in a separate process
+# ABSTRACT: Code or a system command to be run in a separate process
 
 use English qw(-no_match_vars);
 use Carp;
@@ -11,7 +11,7 @@ use Scalar::Util qw(reftype);
 use Params::Util qw(_STRING _ARRAYLIKE _HASHLIKE _NUMBER _HANDLE);
 use List::Util qw(reduce);
 use File::Temp qw(tmpnam);
-use POSIX qw(mkfifo);
+use POSIX qw(:signal_h :errno_h :sys_wait_h mkfifo);
 
 #use IPC::Pipeline::Composable qw(ipc_pl);
 #use IPC::Pipeline::Composable::CmdSubst qw(ipc_cs);
@@ -47,6 +47,7 @@ sub new {
 
 ### COMMAND EXECUTION ###
 
+
 sub run {
   my ($self, %opt) = @_;
 
@@ -54,16 +55,87 @@ sub run {
   # make sure to keep track of process-subst. stuff
   my ($real_args, $ps_fifos) = __process_args(scalar $self->args, \%opt);
 
-  my $cmd_pid = $self->_run_cmd([$self->cmd, @$real_args], \%opt);
-  print Dumper $cmd_pid; exit;
-  my @ps_pids = __run_ps_cmds($ps_fifos, \%opt);
+  my $cmd_pid = $self->_fork_cmd([$self->cmd, @$real_args], \%opt);
+
+#my $old_reaper = $SIG{CHLD};
+  my $new_reaper;
+  $SIG{CHLD} = $new_reaper = sub {
+    my $pid = waitpid(-1, WNOHANG);
+    if ( $pid == $cmd_pid ) {
+      if ( WIFEXITED($?) ) {
+        # clean up PS fifos... WHY U NO WORK RIGHT?
+        print "Process $pid exited.\n";
+        unlink keys %$ps_fifos;
+      }
+    }
+    #$old_reaper->() if $old_reaper;
+    $SIG{CHLD} = $new_reaper;
+  };
+
+  my @ps_pids = $self->_fork_ps_cmds($ps_fifos, \%opt);
+
+  waitpid $cmd_pid,0; exit;
 }
 
-# just a stub for now...
-sub _run_cmd {
-  my ($self, $cmd_spec, $opt) = @_;
-  return join ' ', @$cmd_spec;
+sub _fork_ps_cmds {
+  my ($self, $ps_fifos, $opt) = @_;
+  my @ps_pids;
+  while (my ($fifo, $ps_cmd_spec) = each %$ps_fifos) {
+    my ($mode, $cmd_spec) = @$ps_cmd_spec;
+    my $fmode = $mode eq '<' ? '>' : $mode eq '>' ? '<' : die "unknown PS mode $mode\n";
+    print "Running " . Dumper $cmd_spec;
+    open my $fifo_fh, "$fmode", $fifo;
+    my %ps_opt = (
+      %$opt,
+      stdin => ($mode eq '>' ? $fifo_fh : undef),
+      stdout => ($mode eq '<' ? $fifo_fh : undef),
+    );
+    push @ps_pids, $self->_fork_cmd($cmd_spec, \%ps_opt);
+  }
+  return @ps_pids;
 }
+
+sub _fork_cmd {
+  my ($self, $cmd_spec, $opt) = @_;
+
+  my $pid = fork();
+  return $pid if $pid;
+
+  my %fds = $self->_init_fds(%$opt);
+
+  # setup file descriptors in child
+  while ( my ($fd, $spec) = each %{ $self->{fds} } ) {
+    my ($mode, $hnd) = @$spec;
+    if (!defined $hnd) {
+      next;
+    }
+    my $h_fd = fileno($hnd);
+    defined POSIX::close($fd) or die "Couldn't close descriptor [$fd] in pid [$PID]: $!\n";
+    defined POSIX::dup2($h_fd, $fd) or die "Couldn't dup2 [$h_fd],[$fd] in pid [$PID]: $!\n";
+  }
+
+  __exec_cmd($cmd_spec);
+  die "pid $PID should never have gotten here.";
+
+}
+
+sub __exec_cmd {
+  my ($cmd) = @_;
+
+  if (_STRING($cmd)) {
+    exec $cmd or die "Cannot exec [$cmd]: $!\n";
+  }
+
+  if (ref($cmd->[0]) and reftype($cmd->[0]) eq 'CODE') {
+    my $code = shift @$cmd;
+    exit $code->(@$cmd);
+  }
+
+  #print "about to exec $cmd->[0]\n";
+  exec(@$cmd) or die "Cannot exec [$cmd->[0]]: $!\n";
+}
+
+
 
 ### ARGUMENT PROCESSING ###
 
@@ -93,7 +165,7 @@ sub __process_args {
       die "Command Substitution not yet implemented!";
 
       # run the pipeline of commands, collect stdout into buffer,
-      # push buffer contents onto real args
+    # push buffer contents onto real args
       my $buf;
       ipc_pl(@$arg)->run(stdout => \$buf, ps_fifos => \%ps_fifos)->finish;
       push @real_args, $buf;

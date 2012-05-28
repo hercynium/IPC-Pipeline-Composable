@@ -27,6 +27,7 @@ open my $err_fh, '>', 'cmd_errors.txt';
 #  { stdout => \*STDOUT, stdin => undef },
 #);
 
-my $cmd = ipc_cmd('echo', $0, { stdout => \*STDERR });
+#my $cmd = ipc_cmd('./bar', $0, { fds => { 3 => ['>', \*STDERR]}});
+my $cmd = ipc_cmd('cat', ['<',['./foo']], $0);
 print Dumper $cmd;
 $cmd->run;
