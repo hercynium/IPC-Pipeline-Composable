@@ -1,2 +1,6 @@
 #!/usr/bin/env bash
-echo "foo"
+
+echo "foo1" >&1
+echo "foo2" >&2
+echo "foo3" >&3
+

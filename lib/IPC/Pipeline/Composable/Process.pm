@@ -7,6 +7,7 @@ package IPC::Pipeline::Composable::Process;
 use English qw(-no_match_vars);
 use Carp;
 use Data::Dumper;
+use autodie;
 use Scalar::Util qw(reftype);
 use Params::Util qw(_STRING _ARRAYLIKE _HASHLIKE _NUMBER _HANDLE);
 use List::Util qw(reduce);
@@ -103,20 +104,42 @@ sub _fork_cmd {
 
   my %fds = $self->_init_fds(%$opt);
 
-  # setup file descriptors in child
-  while ( my ($fd, $spec) = each %{ $self->{fds} } ) {
-    my ($mode, $hnd) = @$spec;
-    if (!defined $hnd) {
-      next;
-    }
-    my $h_fd = fileno($hnd);
-    defined POSIX::close($fd) or die "Couldn't close descriptor [$fd] in pid [$PID]: $!\n";
-    defined POSIX::dup2($h_fd, $fd) or die "Couldn't dup2 [$h_fd],[$fd] in pid [$PID]: $!\n";
-  }
-
+  __setup_child_fds(\%fds, $opt);
   __exec_cmd($cmd_spec);
-  die "pid $PID should never have gotten here.";
 
+  die "pid $PID should never have gotten here.";
+}
+
+sub __setup_child_fds {
+  my ($fds, $opt) = @_;
+
+  # figure out what gets mapped to what (parent_fd => child_fd)
+  my %mapped_fds = reverse
+    map { $_ => fileno($fds->{$_}[1]) }
+    grep { $fds->{$_}[1] }
+    keys %$fds;
+
+  # setup file descriptors in child, closing and duping etc.
+  while ( my ($c_fd, $p_fd) = each %mapped_fds ) {
+
+    # if the parent's fd is the same as this one, we gotta move
+    # it out of the way
+    if ( $c_fd == $p_fd ) {
+      $p_fd = POSIX::dup($p_fd);
+      defined $p_fd or die "Couldn't dup [$p_fd] in pid [$PID]: $!\n";
+    }
+
+    # for the current p_fd, if it will map onto an existing c_fd,
+    # we gotta change the c_fd by duping it and replacing in mapped_fds.
+    if ( $mapped_fds{$p_fd} ) {
+      my $old_fd = $mapped_fds{$p_fd};
+      $mapped_fds{$p_fd} = $c_fd = POSIX::dup($old_fd);
+      defined $mapped_fds{$p_fd} or die "Couldn't dup [$old_fd] in pid [$PID]: $!\n";
+    }
+
+    defined POSIX::close($c_fd) or die "Couldn't close descriptor [$c_fd] in pid [$PID]: $!\n";
+    defined POSIX::dup2($p_fd, $c_fd) or die "Couldn't dup2 [$p_fd],[$c_fd] in pid [$PID]: $!\n";
+  }
 }
 
 sub __exec_cmd {
